@@ -1,0 +1,39 @@
+# Rejection Sampling Recipes Configuration
+
+data:
+  input_path: ???                # Required: path to input jsonl file
+  preprocess:
+    transform: null              # null = direct copy (data already formatted)
+                                 # or specify: transforms/gsm8k.py:transform
+
+work_dir: null                   # null = auto generate timestamp path (output/YYYYMMDD_HHMMSS/)
+
+sampling:
+  max_rollouts: 16               # Target: collect this many valid rollouts
+  step_size: 4                   # Rollouts per step
+  max_steps: 8                   # Max steps (default = max_rollouts/step_size, set higher to handle truncation)
+  early_stop: true               # Enable smart early stopping based on formatter needs
+
+sampler:
+  type: openai-compatible-api    # Options: openai-compatible-api, vllm-offline
+  model: DeepSeek-R1
+  base_url: null                 # Only used for openai-compatible-api, defaults to https://api.openai.com/v1
+  model_path: null               # Only used for vllm-offline
+  temperature: 0.7               # Recommended 0.6 for long outputs (>8k), 0.8 for short outputs, default 0.7
+  max_tokens: 2048
+  top_p: 1.0
+  concurrent_requests: 50        # Concurrent batch size for async requests
+  timeout: 300                   # Request timeout in seconds
+  drop_truncated: true           # Drop truncated responses (finish_reason=length or missing eos_token)
+
+verifier:
+  type: math-rlvr                # Options: math-rlvr, mcq-rlvr, mcq-llm-as-judge
+  score_type: float
+
+formatter:
+  - type: sft                    # Options: sft, dpo
+    pass_threshold: 1.0          # score >= pass_threshold is considered as passed
+    fail_threshold: 0.0          # score <= fail_threshold is considered as failed
+
+shard:
+  size: 10000                    # Samples per shard file
