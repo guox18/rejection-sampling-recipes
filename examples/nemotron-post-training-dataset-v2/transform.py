@@ -3,6 +3,11 @@ Transform function for Nemotron Post-Training Dataset MCQ format.
 
 Converts the original format (with assistant response) to pipeline format
 (user message only + metadata with ground truth answer).
+
+Usage:
+    uv run python run.py \
+        data.input_path=... \
+        data.preprocess.transform=examples/nemotron-post-training-dataset-v2/transform.py:transform
 """
 
 import re
@@ -12,7 +17,16 @@ def transform(item: dict) -> dict | None:
     """
     Transform Nemotron MCQ item to pipeline format.
 
-    Input format:
+    Supports two input formats:
+
+    1. Already processed format (pass through):
+    {
+        "id": "...",
+        "messages": [{"role": "user", "content": "question..."}],
+        "metadata": {"answer": "A", ...}
+    }
+
+    2. Original format (needs conversion):
     {
         "uuid": "...",
         "messages": [
@@ -30,7 +44,36 @@ def transform(item: dict) -> dict | None:
         "metadata": {"answer": "A", "category": "stem", ...}
     }
     """
-    # Extract answer from assistant response
+    # Check if already in target format
+    if _is_target_format(item):
+        return item
+
+    # Convert from original format
+    return _convert_from_original(item)
+
+
+def _is_target_format(item: dict) -> bool:
+    """Check if item is already in target format."""
+    # Must have 'id' field
+    if "id" not in item:
+        return False
+
+    # Must have 'metadata' with 'answer'
+    metadata = item.get("metadata", {})
+    if not metadata.get("answer"):
+        return False
+
+    # Messages should not contain assistant role (already processed)
+    messages = item.get("messages", [])
+    for msg in messages:
+        if msg.get("role") == "assistant":
+            return False
+
+    return True
+
+
+def _convert_from_original(item: dict) -> dict | None:
+    """Convert from original Nemotron format with assistant response."""
     messages = item.get("messages", [])
     assistant_msg = None
     user_messages = []

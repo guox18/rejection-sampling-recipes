@@ -1,55 +1,55 @@
 # Rejection Sampling Recipes
 
-这个项目是希望复现一些 rejection sampling 的工作，提供可复现的数据合成基线。
+This project aims to reproduce rejection sampling workflows and provide reproducible baselines for data synthesis.
 
-## 背景
+## Background
 
-市面上已经有很多推理/训练(LLaMA-Factory、veRL)/评测(lm-eval-harness、OpenCompass)框架，但缺少合成数据的规范框架。虽然合成数据的门槛较低，不涉及复杂的代码逻辑，但新手可能会犯一些常见错误：
-- 输出被截断（max_tokens 设置不当 / cot 解析逻辑错误）
-- 采样参数不合理（temperature 设置）
-- 评估有漏洞（答案提取逻辑错误）
-- 忘记保存通过率，想要筛选难度时还需要重复推理
-- 推理效率低（大量 rollout 预算浪费在简单题，难题 rollout 次数不足）
+There are many existing frameworks for inference/training (LLaMA-Factory, veRL) and evaluation (lm-eval-harness, OpenCompass), but there's a lack of standardized frameworks for synthetic data generation. Although synthetic data has a lower barrier to entry without complex code logic, beginners may make common mistakes:
+- Output truncation (improper `max_tokens` setting / incorrect CoT parsing logic)
+- Unreasonable sampling parameters (temperature settings)
+- Evaluation loopholes (incorrect answer extraction logic)
+- Forgetting to save pass rates, requiring re-inference when filtering by difficulty
+- Low inference efficiency (lots of rollout budget wasted on easy problems, insufficient rollouts for hard problems)
 
-目前缺少一些可复现的数据合成基线（如 RLVR, rubrics/reward model）。
+Currently, there's a lack of reproducible data synthesis baselines (like RLVR, rubrics/reward model).
 
-### 😱 踩坑案例
+### 😱 Real-World Pitfalls
 
-> **案例1**：蒸馏 DeepSeek-R1，rollout 一切正常，速度还挺快。蒸馏和训练跑了 3 天。等到评估时发现分数不对。回头检查才发现，`max_tokens` 只设了 2048，R1 的长思维链全部被截断，数据全废了。
+> **Case 1**: Distilling DeepSeek-R1, rollout seemed normal and was reasonably fast. Distillation and training ran for 3 days. When evaluating, the scores were off. Checking revealed `max_tokens` was only set to 2048, truncating all of R1's long chain-of-thought outputs. All data was wasted.
 >
-> **案例2**：Rollout 完成后想筛选简单题和难题分开训练，才发现没保存每道题的通过率，只能重新跑一遍。
+> **Case 2**: After completing rollouts, wanted to separate easy and hard problems for different training. Realized pass rates weren't saved, had to rerun everything.
 >
-> **案例3**：用 自己写的 json 解析工具处理模型的长输出，pass rate 异常偏低。排查发现不小心把 thinking 过程中出现的 `{"answer": "B"}` 解析出来了，而不是模型最终输出的答案。
+> **Case 3**: Used a custom JSON parsing tool for long model outputs, pass rate was abnormally low. Investigation found it was extracting `{"answer": "B"}` from the thinking process instead of the model's final answer.
 
 
-## 项目贡献
+## Project Contributions
 
-1. **提供端到端 Recipe**：数据准备 → 合成 → 训练脚本 → 评测脚本
-2. **基础功能完善**：断点续推、智能早停、质量分析
-3. **可复现基线**：提供完整的配置、日志、结果，方便用户参照和修改
+1. **End-to-End Recipes**: Data preparation → Synthesis → Training scripts → Evaluation scripts
+2. **Complete Basic Features**: Checkpoint resume, smart early stopping, quality analysis
+3. **Reproducible Baselines**: Complete configurations, logs, and results for reference and modification
 
-## Scope 定义
+## Scope Definition
 
-### 聚焦方法
-- **Rejection Sampling**：对同一 prompt 采样多次，选择通过验证的 response
-- **Best-of-N**：对同一 prompt 采样 N 次，选择得分最高的 response
+### Focus Methods
+- **Rejection Sampling**: Sample multiple times for the same prompt, select responses that pass verification
+- **Best-of-N**: Sample N times for the same prompt, select the highest-scoring response
 
-### 支持任务
+### Supported Tasks
 
-| 任务类型 | 验证方式 |
-|---------|---------|
-| 数学推理 | Rule-based（答案提取+比对） |
-| 学科选择题 | Rule-based（选项匹配） |
-| 通用对话 | LLM-as-Judge / Reward Model |
+| Task Type | Verification Method |
+|-----------|-------------------|
+| Math Reasoning | Rule-based (answer extraction + comparison) |
+| Subject MCQ | Rule-based (option matching) |
+| General Chat | LLM-as-Judge / Reward Model |
 
-### 支持的推理后端 (Sampler)
+### Supported Inference Backends (Sampler)
 
-| 类型 | 说明 |
-|-----|------|
-| `openai-compatible-api` | 支持 OpenAI、DeepSeek、vLLM serve、SGLang 等，asyncio 并发 |
-| `vllm-offline` | 本地离线推理，支持 Ray 数据并行 |
+| Type | Description |
+|------|-------------|
+| `openai-compatible-api` | Supports OpenAI, DeepSeek, vLLM serve, SGLang, etc., with asyncio concurrency |
+| `vllm-offline` | Local offline inference, supports Ray data parallelism |
 
-**参数扩展**：不同模型/服务可能有特殊参数（如 OSS 模型的 `reasoning_effort`），通过 `extra_params` 传递：
+**Parameter Extension**: Different models/services may have special parameters (e.g., `reasoning_effort` for OSS models), passed through `extra_params`:
 
 ```yaml
 sampler:
@@ -57,86 +57,86 @@ sampler:
   model: qwen
   base_url: http://localhost:30120/v1
   extra_params:
-    reasoning_effort: high        # OSS 模型特有参数
+    reasoning_effort: high        # OSS model specific parameter
 ```
 
-**截断处理**：默认丢弃被截断的 response（`drop_truncated: true`）
+**Truncation Handling**: Truncated responses are dropped by default (`drop_truncated: true`)
 
-| 后端 | 检测方式 |
-|-----|---------|
+| Backend | Detection Method |
+|---------|-----------------|
 | `openai-compatible-api` | `finish_reason == "length"` |
-| `vllm-offline` | 末尾无 `eos_token`（从 tokenizer_config.json 读取） |
+| `vllm-offline` | No `eos_token` at the end (read from tokenizer_config.json) |
 
-截断的 response 直接丢弃，不保存、不计入有效 rollout。通过增大 `max_steps` 来补偿截断带来的损失。
+Truncated responses are directly discarded, not saved, and don't count toward valid rollouts. Increase `max_steps` to compensate for truncation losses.
 
-### 支持的验证器 (Verifier)
+### Supported Verifiers
 
-| 类型 | 适用场景 |
-|-----|---------|
-| `math-rlvr` | 数学推理（答案提取 + 数值比较） |
-| `mcq-rlvr` | 选择题（规则提取选项） |
-| `mcq-llm-as-judge` | 选择题（非 R1 模型，选项不在 `\boxed{}` 中，需 LLM 提取） |
+| Type | Use Case |
+|------|----------|
+| `math-rlvr` | Math reasoning (answer extraction + numerical comparison) |
+| `mcq-rlvr` | Multiple choice (rule-based option extraction) |
+| `mcq-llm-as-judge` | Multiple choice (non-R1 models where options aren't in `\boxed{}`, requires LLM extraction) |
 
-### 支持的数据格式化器 (Formatter)
+### Supported Formatters
 
-支持同时运行多个 formatter，一次 rollout 可同时生成 SFT 和 DPO 数据。
+Supports running multiple formatters simultaneously, generating both SFT and DPO data from one rollout.
 
-| 类型 | 说明 | 早停条件 |
-|-----|------|---------|
-| `sft` | 取得分最高的 response | 有 1 个 pass（score >= pass_threshold） |
-| `dpo` | 取最高分 + 最低分的 response | 有 1 个 pass + 1 个 fail（score <= fail_threshold） |
+| Type | Description | Early Stop Condition |
+|------|-------------|---------------------|
+| `sft` | Select highest-scoring response | Has 1 pass (score >= pass_threshold) |
+| `dpo` | Select highest + lowest scoring responses | Has 1 pass + 1 fail (score <= fail_threshold) |
 
 ---
 
-## 工作路径设计
+## Work Directory Design
 
-采用**时间戳路径**组织实验，便于追踪、复现和 resume。
+Uses **timestamp-based paths** to organize experiments for easy tracking, reproduction, and resume.
 
 ```
 output/20251206_143052/
-├── config.yaml                   # 实验配置（自动保存）
-├── state.json                    # 运行状态（进度、断点）
+├── config.yaml                   # Experiment config (auto-saved)
+├── state.json                    # Run state (progress, checkpoint)
 ├── data/
-│   └── input.jsonl               # 预处理后的数据
-├── rollout/                      # 推理+评测结果（分 shard 存储）
+│   └── input.jsonl               # Preprocessed data
+├── rollout/                      # Inference + evaluation results (sharded storage)
 │   ├── shard_0000.jsonl
 │   └── ...
-├── train/                        # 训练数据
+├── train/                        # Training data
 │   ├── sft.jsonl
 │   └── dpo.jsonl
-└── summary/                      # 分析结果
+└── summary/                      # Analysis results
     └── stats.json
 ```
 
-### 数据预处理
+### Data Preprocessing
 
-**流程**：
+**Flow**:
 ```
-原始数据 → DataPreprocessor → 格式检查 → data/input.jsonl
+Raw data → DataPreprocessor → Format check → data/input.jsonl
                 ↓
-          transform (可选)
+          transform (optional)
 ```
 
-**逻辑**：
-1. 检查 `work_dir/data/input.jsonl` 是否存在
-2. 如果存在 → 跳过预处理（resume 场景）
-3. 如果不存在 → 读取原始数据 → transform（可选）→ 格式检查 → 写入
+**Logic**:
+1. Check if `work_dir/data/input.jsonl` exists
+2. If exists → Skip preprocessing (resume scenario)
+3. If not exists → Read raw data → transform (optional) → Format check → Write
 
-**格式要求**：
+**Format Requirements**:
 ```python
 {
-    "id": str,                           # 必须：唯一标识
-    "messages": [                        # 必须：OpenAI messages 格式
+    "id": str,                           # Required: unique identifier
+    "messages": [                        # Required: OpenAI messages format
         {"role": "user", "content": str}
     ],
-    "metadata": {                        # 必须：元数据
-        "answer": str,                   # 可选：标准答案（无则打印警告）
+    "metadata": {                        # Required: metadata
+        "answer": str,                   # Optional: ground truth answer (warning printed if missing)
         ...
     }
 }
 ```
 
-**Transform 函数接口**：
+**Transform Function Interface**:
 ```python
 # transforms/gsm8k.py
 def transform(item: dict) -> dict | None:
@@ -148,33 +148,33 @@ def transform(item: dict) -> dict | None:
     }
 ```
 
-**使用示例**：
+**Usage Examples**:
 ```bash
-# 数据已符合格式，直接复制
+# Data already formatted, direct copy
 python run.py data.input_path=/path/to/formatted.jsonl
 
-# 需要转换
+# Needs transformation
 python run.py data.input_path=/path/to/raw.jsonl \
   data.preprocess.transform=transforms/gsm8k.py:transform
 
-# resume，已有 data/input.jsonl，跳过预处理
+# Resume, already has data/input.jsonl, skip preprocessing
 python run.py work_dir=output/20251206_143052/
 ```
 
-### 分 Shard 存储
+### Sharded Storage
 
-Rollout 结果按 shard 分片存储（默认每 10000 条一个 shard），好处：
-- 支持大规模数据（10w+）而不爆内存
-- 断点续推时只需重跑未完成的 shard
-- 便于并行处理
+Rollout results are stored in shards (default 10000 items per shard), benefits:
+- Supports large-scale data (100k+) without memory explosion
+- Only need to rerun incomplete shards on resume
+- Facilitates parallel processing
 
 ---
 
-## 配置管理
+## Configuration Management
 
-使用 **Hydra** 进行配置管理，支持 YAML 配置 + 命令行覆盖。
+Uses **Hydra** for configuration management, supporting YAML config + command line overrides.
 
-### 配置示例
+### Configuration Example
 
 ```yaml
 # Rejection Sampling Recipes Configuration
@@ -222,13 +222,13 @@ shard:
 
 ---
 
-## 用户接口
+## User Interface
 
 ```bash
-# 启动新实验
+# Start a new experiment
 python run.py data.input_path=/path/to/data.jsonl
 
-# 覆盖配置
+# Override config
 python run.py data.input_path=/path/to/data.jsonl \
   sampler.model=deepseek-chat \
   sampling.max_rollouts=32
@@ -239,22 +239,22 @@ python run.py work_dir=output/20251206_143052/
 
 ---
 
-## 数据格式
+## Data Formats
 
-采用 **Messages 格式**（OpenAI 标准）。
+Uses **Messages format** (OpenAI standard).
 
-### 输入格式
+### Input Format
 
 ```jsonl
-{"id": "001", "messages": [{"role": "user", "content": "问题..."}], "metadata": {"answer": "42"}}
+{"id": "001", "messages": [{"role": "user", "content": "Question..."}], "metadata": {"answer": "42"}}
 ```
 
-### Rollout 输出格式
+### Rollout Output Format
 
 ```jsonl
 {
   "id": "001",
-  "messages": [{"role": "user", "content": "问题..."}],
+  "messages": [{"role": "user", "content": "Question..."}],
   "metadata": {"answer": "42"},
   "rollouts": [
     {"response": "...", "score": 1.0},
@@ -263,86 +263,86 @@ python run.py work_dir=output/20251206_143052/
 }
 ```
 
-### 训练数据格式
+### Training Data Formats
 
-**SFT：**
+**SFT:**
 ```jsonl
 {"messages": [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]}
 ```
 
-**DPO：**
+**DPO:**
 ```jsonl
 {"prompt": [{"role": "user", "content": "..."}], "chosen": [...], "rejected": [...]}
 ```
 
 ---
 
-## 核心功能
+## Core Features
 
-### 1. 采样流程
+### 1. Sampling Flow
 
 ```
-目标: 收集 max_rollouts 条有效 rollout
+Goal: Collect max_rollouts valid rollouts
 
-step 1: roll step_size 条 → 丢弃截断 → 保留有效 → 检查早停
-step 2: roll step_size 条 → 丢弃截断 → 保留有效 → 检查早停
+step 1: roll step_size items → drop truncated → keep valid → check early stop
+step 2: roll step_size items → drop truncated → keep valid → check early stop
 ...
-停止条件：有效 rollout >= max_rollouts 或 step >= max_steps 或早停满足
+Stop conditions: valid rollouts >= max_rollouts OR step >= max_steps OR early stop satisfied
 ```
 
-**配置示例**：
-- `max_rollouts=16, step_size=4, max_steps=4`：无截断时刚好 4 轮
-- `max_rollouts=16, step_size=4, max_steps=8`：允许 2 倍轮数，应对截断
+**Configuration Examples**:
+- `max_rollouts=16, step_size=4, max_steps=4`: Exactly 4 rounds with no truncation
+- `max_rollouts=16, step_size=4, max_steps=8`: Allow 2x rounds to handle truncation
 
-### 2. 智能早停
+### 2. Smart Early Stopping
 
-根据 formatter 需求提前停止采样：
+Stop sampling early based on formatter needs:
 
-- SFT 早停条件：有 1 个 pass
-- DPO 早停条件：有 1 个 pass + 1 个 fail
-- 多 formatter：满足所有 formatter 才停止
+- SFT early stop condition: Has 1 pass
+- DPO early stop condition: Has 1 pass + 1 fail
+- Multiple formatters: Stop only when all formatters are satisfied
 
-### 2. 断点续推
+### 3. Checkpoint Resume
 
-- `state.json` 记录已完成的 shard 列表
-- 重启时自动跳过已完成的 shard
+- `state.json` records list of completed shards
+- Automatically skip completed shards on restart
 
-### 3. 质量分析
+### 4. Quality Analysis
 
-统计通过率、token 分布、平均采样次数等，保存到 `summary/stats.json`。
+Statistics on pass rate, token distribution, average sampling count, etc., saved to `summary/stats.json`.
 
 ---
 
-## 项目结构
+## Project Structure
 
 ```
 rejection-sampling-recipes/
-├── configs/                     # Hydra 配置
+├── configs/                     # Hydra configs
 ├── src/
-│   ├── sampler/                 # 采样器
-│   ├── verifier/                # 验证器
-│   ├── formatter/               # 格式化器
-│   ├── pipeline.py              # 主流程
-│   └── analysis.py              # 质量分析
-├── run.py                       # 入口
-├── recipes/                     # 示例 Recipe
+│   ├── sampler/                 # Samplers
+│   ├── verifier/                # Verifiers
+│   ├── formatter/               # Formatters
+│   ├── pipeline.py              # Main pipeline
+│   └── analysis.py              # Quality analysis
+├── run.py                       # Entry point
+├── recipes/                     # Example recipes
 ├── pyproject.toml               # uv
 └── requirements.txt             # pip
 ```
 
 ---
 
-## 环境管理
+## Environment Management
 
-支持两种方式：
+Two options supported:
 
-**uv（推荐）：**
+**uv (recommended):**
 ```bash
 uv sync
 uv run python run.py ...
 ```
 
-**conda + pip：**
+**conda + pip:**
 ```bash
 conda create -n rsr python=3.12 -y
 conda activate rsr
@@ -352,53 +352,54 @@ python run.py ...
 
 ---
 
-## 开发规范
+## Development Standards
 
-### 分支策略
+### Branch Strategy
 
-- `main`：稳定分支，初始开发直接 push，后续只接受 PR
-- `feat/*`：功能分支，完成后 PR 到 main
-- `fix/*`：修复分支
+- `main`: Stable branch, direct push during initial development, only accepts PRs later
+- `feat/*`: Feature branches, PR to main when complete
+- `fix/*`: Fix branches
 
-### 代码规范
+### Code Standards
 
-- **语言**：代码注释、docstring、commit message 全部使用英文
-- **Linter**：使用 ruff（lint + format）
-- **类型提示**：推荐使用 type hints
+- **Language**: Code comments, docstrings, commit messages all in English
+- **Linter**: Use ruff (lint + format)
+- **Type Hints**: Recommended
 
-### CI 配置
+### CI Configuration
 
-GitHub Actions 自动运行：
-- ruff check（lint）
-- ruff format --check（format）
-- pytest（单元测试）
+GitHub Actions automatically runs:
+- ruff check (lint)
+- ruff format --check (format)
+- pytest (unit tests)
 
-### 项目文件清单
+### Project File Checklist
 
 ```
 rejection-sampling-recipes/
 ├── .github/
 │   └── workflows/
-│       └── ci.yml               # CI 配置
+│       └── ci.yml               # CI config
 ├── .gitignore
 ├── .pre-commit-config.yaml      # pre-commit hooks
 ├── LICENSE                      # MIT
-├── README.md                    # 英文，面向开源社区
+├── README.md                    # English, for open source community
 ├── docs/
-│   └── design.md                # 中文设计文档
-├── pyproject.toml               # 项目配置 + ruff 配置
+│   └── design.md                # Design document
+│   └── design_cn.md             # Chinese design document
+├── pyproject.toml               # Project config + ruff config
 ├── requirements.txt
 ├── configs/
 ├── src/
-├── tests/                       # 单元测试
+├── tests/                       # Unit tests
 └── run.py
 ```
 
 ---
 
-## 开发流程
+## Development Flow
 
-### 模块交互关系
+### Module Interaction
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -421,19 +422,19 @@ rejection-sampling-recipes/
                          └──────────────────┘
 ```
 
-### 模块职责
+### Module Responsibilities
 
-| 模块 | 输入 | 输出 | 职责 |
-|------|------|------|------|
-| **DataPreprocessor** | raw jsonl | `data/input.jsonl` | 转换格式 + 校验 |
-| **Sampler** | messages | `List[str]` | 调用 LLM 生成 response |
-| **Verifier** | response + metadata | `float` | 评估 response，返回分数 |
-| **Formatter** | item + rollouts | `List[dict]` | 筛选并格式化为训练数据 |
-| **StateManager** | - | - | 管理断点续推状态 |
+| Module | Input | Output | Responsibility |
+|--------|-------|--------|----------------|
+| **DataPreprocessor** | raw jsonl | `data/input.jsonl` | Format conversion + validation |
+| **Sampler** | messages | `List[str]` | Call LLM to generate responses |
+| **Verifier** | response + metadata | `float` | Evaluate response, return score |
+| **Formatter** | item + rollouts | `List[dict]` | Filter and format into training data |
+| **StateManager** | - | - | Manage checkpoint resume state |
 
-### 设计决策
+### Design Decisions
 
-**Sampler**：简单工厂函数（只有两种类型）
+**Sampler**: Simple factory function (only two types)
 ```python
 def get_sampler(cfg):
     if cfg.type == "openai-compatible-api":
@@ -442,7 +443,7 @@ def get_sampler(cfg):
         return VLLMSampler(cfg)
 ```
 
-**Verifier**：注册器模式（类型多，用户可能扩展）
+**Verifier**: Registry pattern (many types, users may extend)
 ```python
 @register_verifier("math-rlvr")
 class MathRLVRVerifier(BaseVerifier): ...
@@ -450,112 +451,113 @@ class MathRLVRVerifier(BaseVerifier): ...
 @register_verifier("mcq-rlvr")
 class MCQRLVRVerifier(BaseVerifier): ...
 
-# 使用
+# Usage
 verifier = get_verifier(cfg.verifier.type)
 ```
 
-**Formatter**：注册器模式（用户可能扩展）
+**Formatter**: Registry pattern (users may extend)
 ```python
 @register_formatter("sft")
-class SFTFormatter(BaseFormatter): ...      # 取最高分
+class SFTFormatter(BaseFormatter): ...      # Select highest score
 
 @register_formatter("dpo")
-class DPOFormatter(BaseFormatter): ...      # 取最高 + 最低
+class DPOFormatter(BaseFormatter): ...      # Select highest + lowest
 
 @register_formatter("top_k")
-class TopKFormatter(BaseFormatter): ...     # 取前 k 个高于阈值的
+class TopKFormatter(BaseFormatter): ...     # Select top k above threshold
 
-# 使用
+# Usage
 formatter = get_formatter(cfg.type)
+```
 
-### 开发阶段
+### Development Phases
 
-#### Phase 1: Sampler（推理模块）
+#### Phase 1: Sampler (Inference Module)
 
-**目标**：实现稳定的推理能力
+**Goal**: Implement stable inference capability
 
-**任务**：
-- [ ] 实现 `OpenAISampler`（asyncio 并发）
-- [ ] 实现重试、超时、错误处理
-- [ ] 支持 batch 采样（利用 `n` 参数）
+**Tasks**:
+- [ ] Implement `OpenAISampler` (asyncio concurrent)
+- [ ] Implement retry, timeout, error handling
+- [ ] Support batch sampling (using `n` parameter)
 
-**测试**：
-- 基本功能：能否正常调用 API 并返回结果
-- 并发：高并发下是否稳定
-- 错误处理：超时、限流是否能正确重试
+**Testing**:
+- Basic functionality: Can it call API and return results
+- Concurrency: Is it stable under high concurrency
+- Error handling: Can it correctly retry on timeout/rate limiting
 
-**产出**：
+**Deliverables**:
 - `src/sampler/openai_sampler.py`
 - `tests/test_sampler.py`
-- 一批真实的推理结果（用于后续测试 Verifier）
+- A batch of real inference results (for testing Verifier later)
 
 ---
 
-#### Phase 2: Verifier（评估模块）
+#### Phase 2: Verifier (Evaluation Module)
 
-**目标**：实现准确的评估能力
+**Goal**: Implement accurate evaluation capability
 
-**任务**：
-- [ ] 实现 `MCQVerifier`（选项提取 + 匹配）
-- [ ] 处理不同模型的输出格式差异：
-  - 有/无推理过程
-  - `\boxed{}`、`【答案】`、直接输出等格式
-  - special tokens 差异
+**Tasks**:
+- [ ] Implement `MCQVerifier` (option extraction + matching)
+- [ ] Handle different model output format differences:
+  - With/without reasoning process
+  - `\boxed{}`, `【Answer】`, direct output formats
+  - Special tokens differences
 
-**测试**：
-- 用 Phase 1 的真实推理结果构造测试用例
-- 覆盖各种边界情况：
-  - 正常格式
-  - 格式变体（中英文、全角半角）
-  - 无法提取答案的情况
-  - 数值精度问题（0.3333 vs 1/3）
+**Testing**:
+- Use real inference results from Phase 1 to construct test cases
+- Cover various edge cases:
+  - Normal format
+  - Format variations (Chinese/English, full-width/half-width)
+  - Cases where answer cannot be extracted
+  - Numerical precision issues (0.3333 vs 1/3)
 
-**产出**：
+**Deliverables**:
 - `src/verifier/math_verifier.py`
 - `src/verifier/mcq_verifier.py`
-- `tests/test_verifier.py`（大量测试用例）
-- `tests/fixtures/` 真实推理结果 fixtures
+- `tests/test_verifier.py` (extensive test cases)
+- `tests/fixtures/` real inference result fixtures
 
 ---
 
-#### Phase 3: Formatter（格式化模块）
+#### Phase 3: Formatter (Formatting Module)
 
-**目标**：实现灵活的数据筛选和格式化
+**Goal**: Implement flexible data filtering and formatting
 
-**任务**：
-- [ ] 实现 `SFTFormatter`（取最高分）
-- [ ] 实现 `DPOFormatter`（取最高 + 最低）
-- [ ] 实现早停条件检查 `is_satisfied()`
+**Tasks**:
+- [ ] Implement `SFTFormatter` (select highest score)
+- [ ] Implement `DPOFormatter` (select highest + lowest)
+- [ ] Implement early stop condition check `is_satisfied()`
 
-**测试**：
-- 筛选逻辑是否正确
-- 边界情况：全 pass、全 fail、只有一个
+**Testing**:
+- Is filtering logic correct
+- Edge cases: all pass, all fail, only one
 
-**产出**：
+**Deliverables**:
 - `src/formatter/sft_formatter.py`
 - `src/formatter/dpo_formatter.py`
 - `tests/test_formatter.py`
 
 ---
 
-#### Phase 4: Pipeline（整体流程）
+#### Phase 4: Pipeline (Overall Flow)
 
-**目标**：串联所有模块，实现完整流程
+**Goal**: Connect all modules, implement complete flow
 
-**任务**：
-- [ ] 实现 `Pipeline` 主流程
-- [ ] 实现 `StateManager`（断点续推）
-- [ ] 实现 shard 分片存储
-- [ ] 实现智能早停逻辑
-- [ ] 集成 Hydra 配置
+**Tasks**:
+- [ ] Implement `Pipeline` main flow
+- [ ] Implement `StateManager` (checkpoint resume)
+- [ ] Implement shard storage
+- [ ] Implement smart early stop logic
+- [ ] Integrate Hydra configuration
 
-**测试**：
-- 端到端测试：输入 → 输出
-- 断点续推：中断后能否正确恢复
-- shard 存储：大数据量是否正常
-- 早停：是否按预期减少采样次数
+**Testing**:
+- End-to-end test: input → output
+- Checkpoint resume: Can it correctly recover after interruption
+- Shard storage: Does it work with large data volumes
+- Early stop: Does it reduce sampling as expected
 
-**产出**：
+**Deliverables**:
 - `src/pipeline.py`
 - `src/state.py`
 - `tests/test_pipeline.py`
@@ -563,48 +565,48 @@ formatter = get_formatter(cfg.type)
 
 ---
 
-#### Phase 5: 质量分析 + 文档
+#### Phase 5: Quality Analysis + Documentation
 
-**任务**：
-- [ ] 实现 `Analysis` 统计模块
-- [ ] 完善 README 和使用文档
-- [ ] 提供示例 Recipe
+**Tasks**:
+- [ ] Implement `Analysis` statistics module
+- [ ] Complete README and usage documentation
+- [ ] Provide example recipes
 
-### 测试策略
+### Testing Strategy
 
 ```
 tests/
-├── fixtures/                    # 测试数据
-│   ├── sample_inputs.jsonl      # 输入样例
-│   └── sample_outputs/          # Phase 1 产出的真实推理结果
+├── fixtures/                    # Test data
+│   ├── sample_inputs.jsonl      # Input samples
+│   └── sample_outputs/          # Real inference results from Phase 1
 │       ├── math_responses.jsonl
 │       └── mcq_responses.jsonl
 ├── test_sampler.py              # Phase 1
-├── test_verifier.py             # Phase 2（核心，用例最多）
+├── test_verifier.py             # Phase 2 (core, most test cases)
 ├── test_formatter.py            # Phase 3
-├── test_pipeline.py             # Phase 4（集成测试）
+├── test_pipeline.py             # Phase 4 (integration tests)
 └── conftest.py                  # pytest fixtures
 ```
 
-### 开发顺序建议
+### Suggested Development Timeline
 
 ```
 Week 1: Phase 1 (Sampler)
-        ├── 实现 OpenAISampler
-        └── 收集真实推理结果作为测试数据
+        ├── Implement OpenAISampler
+        └── Collect real inference results as test data
 
-Week 2: Phase 2 (Verifier) ← 核心，花时间最多
-        ├── 实现 MathVerifier
-        ├── 实现 MCQVerifier
-        └── 大量测试用例
+Week 2: Phase 2 (Verifier) ← Core, takes most time
+        ├── Implement MathVerifier
+        ├── Implement MCQVerifier
+        └── Extensive test cases
 
 Week 3: Phase 3 + 4 (Formatter + Pipeline)
-        ├── 实现 Formatter
-        ├── 实现 Pipeline
-        └── 断点续推测试
+        ├── Implement Formatter
+        ├── Implement Pipeline
+        └── Checkpoint resume testing
 
-Week 4: Phase 5 + 收尾
-        ├── 质量分析
-        ├── 文档完善
-        └── 示例 Recipe
+Week 4: Phase 5 + Wrap-up
+        ├── Quality analysis
+        ├── Documentation completion
+        └── Example recipes
 ```

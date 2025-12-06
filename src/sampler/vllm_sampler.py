@@ -6,6 +6,7 @@ Supports tensor parallelism (TP) and data parallelism (DP).
 """
 
 import ray
+from tqdm import tqdm
 
 from .base import BaseSampler
 
@@ -58,16 +59,18 @@ class VLLMWorker:
             return []
 
         # Prepare prompts using tokenizer's chat template
+        # extra_params (e.g., reasoning_effort) are passed to chat template, not SamplingParams
         prompts = []
         for item in items:
             prompt = self.tokenizer.apply_chat_template(
                 item["messages"],
                 tokenize=False,
                 add_generation_prompt=True,
+                **self.extra_params,  # Pass to chat template (e.g., reasoning_effort)
             )
             prompts.append(prompt)
 
-        # Generate with extra params
+        # Generate (extra_params already applied in chat template)
         outputs = self.llm.generate(
             prompts=prompts,
             sampling_params=SamplingParams(
@@ -75,7 +78,6 @@ class VLLMWorker:
                 temperature=self.sampling_params["temperature"],
                 max_tokens=self.sampling_params["max_tokens"],
                 top_p=self.sampling_params["top_p"],
-                **self.extra_params,
             ),
         )
 
@@ -230,15 +232,27 @@ class VLLMSampler(BaseSampler):
         # Split items across workers
         chunks = np.array_split(items, len(self.workers))
 
-        # Submit tasks to actors
-        futures = [
-            worker.sample.remote(list(chunk), n, self.drop_truncated)
-            for worker, chunk in zip(self.workers, chunks, strict=False)
-            if len(chunk) > 0
-        ]
+        # Submit tasks to actors and track chunk sizes per future
+        futures = []
+        future_to_size = {}
+        for worker, chunk in zip(self.workers, chunks, strict=False):
+            if len(chunk) > 0:
+                future = worker.sample.remote(list(chunk), n, self.drop_truncated)
+                futures.append(future)
+                future_to_size[future] = len(chunk)
 
-        # Gather results
-        results_list = ray.get(futures)
+        # Track progress as workers complete
+        results_list = []
+        remaining = list(futures)
+
+        with tqdm(total=len(items), desc="    Sampling", unit="req", leave=False) as pbar:
+            while remaining:
+                done, remaining = ray.wait(remaining, num_returns=1)
+                done_future = done[0]
+                result = ray.get(done_future)
+                results_list.append(result)
+                # Update progress by the number of items this worker processed
+                pbar.update(future_to_size[done_future])
 
         # Flatten to dict
         results_dict = {}

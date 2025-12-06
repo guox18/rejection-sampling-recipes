@@ -10,6 +10,8 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+from tqdm import tqdm
+
 from .formatter import BaseFormatter, get_formatter
 from .preprocessor import DataPreprocessor
 from .sampler import BaseSampler, get_sampler
@@ -82,11 +84,13 @@ class Pipeline:
         """Create formatters based on config."""
         formatters = []
         for fmt_cfg in self.cfg.formatter:
-            formatter = get_formatter(
-                fmt_cfg.type,
-                pass_threshold=fmt_cfg.get("pass_threshold", 1.0),
-                fail_threshold=fmt_cfg.get("fail_threshold", 0.0),
-            )
+            # Convert to dict and pass all params (formatters should accept **kwargs)
+            fmt_dict = dict(fmt_cfg)
+            fmt_type = fmt_dict.pop("type")
+            # Ensure defaults for common params
+            fmt_dict.setdefault("pass_threshold", 1.0)
+            fmt_dict.setdefault("fail_threshold", 0.0)
+            formatter = get_formatter(fmt_type, **fmt_dict)
             formatters.append(formatter)
         return formatters
 
@@ -200,20 +204,29 @@ class Pipeline:
                 n=step_size,
             )
 
-            # Step 2: Verify and collect
+            # Step 2: Verify and collect (with progress bar)
+            # Flatten all (item, response) pairs for verification
+            verify_tasks = []
             for item in remaining_items:
                 item_id = item["id"]
                 responses = responses_map.get(item_id, [])
-
                 for resp in responses:
-                    # Verify
-                    score = self.verifier.verify(resp, item["metadata"])
-                    rollouts_map[item_id].append(
-                        {
-                            "response": resp,
-                            "score": score,
-                        }
-                    )
+                    verify_tasks.append((item_id, item["metadata"], resp))
+
+            # Verify with progress bar
+            for item_id, metadata, resp in tqdm(
+                verify_tasks,
+                desc="    verifying",
+                leave=False,
+                disable=len(verify_tasks) < 10,  # Hide for small batches
+            ):
+                score = self.verifier.verify(resp, metadata)
+                rollouts_map[item_id].append(
+                    {
+                        "response": resp,
+                        "score": score,
+                    }
+                )
 
             # Step 3: Remove satisfied items (early stopping)
             if early_stop:

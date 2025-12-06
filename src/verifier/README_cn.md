@@ -1,22 +1,22 @@
-# Verifier Development Guide
+# Verifier 开发指南
 
-This document explains how to contribute a new Verifier to the project.
+本文档说明如何为项目贡献新的 Verifier。
 
-## Directory Structure
+## 目录结构
 
 ```
 src/verifier/
-├── __init__.py          # Export all verifiers
-├── base.py              # BaseVerifier abstract class
-├── registry.py          # Registry
-├── mcq_rlvr.py          # MCQ rule-based verifier (R1 models)
-├── mcq_llm_judge.py     # MCQ LLM judge
-└── README.md            # This document
+├── __init__.py          # 导出所有 verifier
+├── base.py              # BaseVerifier 抽象类
+├── registry.py          # 注册器
+├── mcq_rlvr.py          # MCQ 规则验证器 (R1 模型)
+├── mcq_llm_judge.py     # MCQ LLM 判断器
+└── README.md            # 本文档
 ```
 
-## Implementation Steps
+## 实现步骤
 
-### 1. Create Verifier File
+### 1. 创建 Verifier 文件
 
 ```python
 # src/verifier/my_verifier.py
@@ -24,7 +24,7 @@ from .base import BaseVerifier
 from .registry import register_verifier
 
 
-@register_verifier("my-verifier")  # Registration name for config files
+@register_verifier("my-verifier")  # 注册名称，用于配置文件
 class MyVerifier(BaseVerifier):
     """
     My verifier description.
@@ -40,7 +40,7 @@ class MyVerifier(BaseVerifier):
 
         Accept **kwargs for compatibility - pipeline may pass unused config.
         """
-        # If configuration is needed, extract from kwargs
+        # 如果需要配置，从 kwargs 取出
         # self.some_option = kwargs.get("some_option", default_value)
         pass
 
@@ -55,26 +55,26 @@ class MyVerifier(BaseVerifier):
         Returns:
             Score: 1.0 for correct, 0.0 for incorrect
         """
-        # 1. Extract ground truth answer
+        # 1. 提取标准答案
         ground_truth = metadata.get("answer")
         if not ground_truth:
             return 0.0
 
-        # 2. Extract model's answer from response
+        # 2. 从 response 提取模型答案
         extracted = self.extract_answer(response)
         if not extracted:
             return 0.0
 
-        # 3. Compare
+        # 3. 比较
         return 1.0 if extracted == ground_truth else 0.0
 
     def extract_answer(self, response: str) -> str | None:
         """Extract answer from response."""
-        # Implement extraction logic
+        # 实现提取逻辑
         pass
 ```
 
-### 2. Export in `__init__.py`
+### 2. 在 `__init__.py` 中导出
 
 ```python
 # src/verifier/__init__.py
@@ -86,9 +86,9 @@ __all__ = [
 ]
 ```
 
-### 3. Add Test Data
+### 3. 添加测试数据
 
-Add test cases in `tests/fixtures/model_outputs.json`:
+在 `tests/fixtures/model_outputs.json` 中添加测试用例：
 
 ```json
 {
@@ -96,7 +96,7 @@ Add test cases in `tests/fixtures/model_outputs.json`:
     {
       "id": "case_correct",
       "model_type": "xxx",
-      "raw_response": "Model output...",
+      "raw_response": "模型输出...",
       "expected": {
         "extracted_answer": "A"
       },
@@ -105,7 +105,7 @@ Add test cases in `tests/fixtures/model_outputs.json`:
     },
     {
       "id": "case_wrong",
-      "raw_response": "Wrong output...",
+      "raw_response": "错误输出...",
       "ground_truth": "A",
       "expected_score": 0.0
     },
@@ -119,9 +119,9 @@ Add test cases in `tests/fixtures/model_outputs.json`:
 }
 ```
 
-### 4. Add Test Class
+### 4. 添加测试类
 
-Add in `tests/test_verifier.py`:
+在 `tests/test_verifier.py` 中添加：
 
 ```python
 class TestMyVerifier:
@@ -132,25 +132,25 @@ class TestMyVerifier:
         return MyVerifier()
 
     def test_correct_answer(self, verifier):
-        """Correct answer scores 1.0"""
-        score = verifier.verify("Correct output", {"answer": "A"})
+        """正确答案得分 1.0"""
+        score = verifier.verify("正确输出", {"answer": "A"})
         assert score == 1.0
 
     def test_wrong_answer(self, verifier):
-        """Wrong answer scores 0.0"""
-        score = verifier.verify("Wrong output", {"answer": "A"})
+        """错误答案得分 0.0"""
+        score = verifier.verify("错误输出", {"answer": "A"})
         assert score == 0.0
 
     def test_empty_response(self, verifier):
-        """Empty response scores 0.0"""
+        """空响应得分 0.0"""
         assert verifier.verify("", {"answer": "A"}) == 0.0
 
     def test_no_answer_in_metadata(self, verifier):
-        """Missing ground truth scores 0.0"""
-        assert verifier.verify("Output", {}) == 0.0
+        """缺少标准答案得分 0.0"""
+        assert verifier.verify("输出", {}) == 0.0
 
     def test_with_fixtures(self, verifier, model_outputs):
-        """Batch test using fixtures"""
+        """使用 fixtures 批量测试"""
         for item in model_outputs.get("my_verifier_responses", []):
             score = verifier.verify(
                 item["raw_response"],
@@ -159,34 +159,34 @@ class TestMyVerifier:
             assert score == item["expected_score"], f"Failed: {item['id']}"
 ```
 
-## Testing Requirements
+## 测试要求
 
-Before submitting a PR, ensure:
+提交 PR 前确保：
 
-- [ ] At least 5 test cases
-- [ ] Coverage: correct/wrong/empty input/missing metadata
-- [ ] `pytest tests/test_verifier.py -v` passes
-- [ ] `ruff check src/verifier/` passes
+- [ ] 至少 5 个测试用例
+- [ ] 覆盖：正确/错误/空输入/缺少 metadata
+- [ ] `pytest tests/test_verifier.py -v` 通过
+- [ ] `ruff check src/verifier/` 通过
 
-## Using the New Verifier
+## 使用新 Verifier
 
-Use the registration name in config files:
+配置文件中使用注册名称：
 
 ```yaml
 verifier:
   type: my-verifier  # @register_verifier("my-verifier")
 ```
 
-## Shared Utility Functions
+## 共享工具函数
 
-If you need to handle thinking tags, use shared utilities:
+如果需要处理 thinking 标签，使用共享工具：
 
 ```python
 from ..utils import clip_thinking, split_response
 
-# Remove thinking process, keep only final answer
+# 去除思考过程，只保留最终答案
 final_answer = clip_thinking(response)
 
-# Separate thinking and answer
+# 分离思考和答案
 thinking, answer = split_response(response)
 ```

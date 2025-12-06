@@ -1,5 +1,10 @@
 # Rejection Sampling Recipes Configuration
 
+# Hydra logs go to output/hydra/ instead of outputs/
+hydra:
+  run:
+    dir: output/hydra/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
 data:
   input_path: ???                # Required: path to input jsonl file
   preprocess:
@@ -33,7 +38,7 @@ sampler:
   extra_params: {}               # Extra params for specific models/services (e.g., reasoning_effort: high)
 
 verifier:
-  type: mcq-rlvr                 # Options: mcq-rlvr, mcq-llm-as-judge
+  type: mcq-rlvr                 # Options: mcq-rlvr, mcq-llm-as-judge, math-rlvr
   # Settings for mcq-llm-as-judge:
   model: null                    # Judge model name (e.g., gpt-4o-mini, qwen)
   base_url: null                 # Judge API base URL
@@ -42,9 +47,11 @@ verifier:
   max_tokens: 10                 # Judge max tokens
 
 formatter:
-  - type: sft                    # Options: sft, dpo
+  - type: sft                    # Options: sft, dpo, multi_sft
     pass_threshold: 1.0          # score >= pass_threshold is considered as passed
     fail_threshold: 0.0          # score <= fail_threshold is considered as failed
+    # For multi_sft:
+    # num_responses: 32          # Number of unique passed responses required
 
 shard:
   size: 10000                    # Samples per shard file

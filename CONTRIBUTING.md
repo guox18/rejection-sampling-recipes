@@ -1,105 +1,101 @@
 # Contributing Guide
 
-感谢你对项目的贡献！
+Thank you for your interest in contributing to this project!
 
-## 开发环境
+## Development Environment
 
 ```bash
-# 推荐使用 uv
+# Using uv (recommended)
 uv sync --dev
 
-# 或者 pip
+# Or using pip
 pip install -e ".[dev]"
 ```
 
-## 代码规范
+## Code Standards
 
-- 使用 `ruff` 进行 lint 和格式化
-- 代码注释、docstring、commit message 使用英文
-- 推荐使用 type hints
+- Use `ruff` for linting and formatting
+- Code comments, docstrings, and commit messages should be in English
+- Type hints are recommended
 
 ```bash
-# 检查
+# Check
 ruff check .
 ruff format --check .
 
-# 自动修复
+# Auto-fix
 ruff check --fix .
 ruff format .
 ```
 
-## 贡献类型
+## Contribution Types
 
-### 1. 新增 Verifier
+### 1. Adding a New Verifier
 
-详见 [src/verifier/README.md](src/verifier/README.md)
+See [src/verifier/README.md](src/verifier/README.md) for details.
 
-**核心步骤**：
-1. 实现 `BaseVerifier` 接口
-2. 使用 `@register_verifier("name")` 注册
-3. 在 `tests/fixtures/model_outputs.json` 添加测试数据
-4. 在 `tests/test_verifier.py` 添加测试类
+**Key Steps**:
+1. Implement the `BaseVerifier` interface
+2. Register with `@register_verifier("name")`
+3. Add test data in `tests/fixtures/model_outputs.json`
+4. Add test class in `tests/test_verifier.py`
 
-### 2. 新增 Formatter
+### 2. Adding a New Formatter
 
-类似 Verifier，参考 `src/formatter/` 中的实现。
+Similar to Verifier, refer to implementations in `src/formatter/`.
 
-### 3. Bug 修复
+### 3. Bug Fixes
 
-1. 先创建 Issue 描述问题
-2. Fork 并修复
-3. 添加测试覆盖修复的场景
-4. 提交 PR
+1. Create an Issue to describe the problem first
+2. Fork and fix
+3. Add tests covering the fix scenario
+4. Submit a PR
 
-## 测试
+## Testing
 
 ```bash
-# 运行所有测试
+# Run all tests
 pytest tests/ -v
 
-# 运行特定测试
+# Run specific tests
 pytest tests/test_verifier.py -v
 
-# 带覆盖率
+# With coverage
 pytest tests/ -v --cov=src
 ```
 
-## PR 提交
+## Submitting a PR
 
-1. Fork 本仓库
-2. 创建分支：`git checkout -b feat/my-feature`
-3. 提交更改：`git commit -m "feat: add xxx"`
-4. 推送：`git push origin feat/my-feature`
-5. 创建 Pull Request
+Fork this repository, create a feature branch, and submit a Pull Request.
 
-### Commit 规范
+### Commit Convention
 
 ```
-feat: 新功能
-fix: 修复 bug
-docs: 文档更新
-test: 测试相关
-refactor: 重构
+feat: New feature
+fix: Bug fix
+docs: Documentation update
+test: Test related
+refactor: Code refactoring
 ```
 
-## 项目结构
+## Project Structure
 
 ```
 rejection-sampling-recipes/
 ├── src/
-│   ├── sampler/        # 采样器 (OpenAI API, vLLM)
-│   ├── verifier/       # 验证器 ← 最常贡献的模块
-│   ├── formatter/      # 格式化器 (SFT, DPO)
-│   ├── utils/          # 工具函数
-│   └── pipeline.py     # 主流程
+│   ├── sampler/        # Samplers (OpenAI API, vLLM)
+│   ├── verifier/       # Verifiers ← Most common contribution area
+│   ├── formatter/      # Formatters (SFT, DPO)
+│   ├── utils/          # Utility functions
+│   └── pipeline.py     # Main pipeline
 ├── tests/
-│   ├── fixtures/       # 测试数据
-│   └── test_*.py       # 测试文件
-├── configs/            # Hydra 配置
-└── transforms/         # 数据转换函数
+│   ├── fixtures/       # Test data
+│   └── test_*.py       # Test files
+├── configs/            # Hydra configurations
+└── transforms/         # Data transform functions
 ```
 
-## 问题反馈
+## Feedback
 
-- Bug 报告：创建 Issue 并附上复现步骤
-- 功能建议：创建 Issue 描述需求场景
+- Bug reports: Create an Issue with reproduction steps
+- Feature requests: Create an Issue describing the use case

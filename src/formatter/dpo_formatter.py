@@ -2,6 +2,9 @@
 DPO Formatter.
 
 Formats rollouts for Direct Preference Optimization by selecting best and worst responses.
+
+Output format follows LLaMA-Factory ShareGPT preference format:
+https://github.com/hiyouga/LLaMA-Factory/blob/main/data/README.md
 """
 
 from .base import BaseFormatter
@@ -20,11 +23,14 @@ class DPOFormatter(BaseFormatter):
         """
         Format rollouts into DPO training data.
 
-        Output format:
+        Output format (LLaMA-Factory compatible):
         {
-            "prompt": [{"role": "user", "content": "..."}],
-            "chosen": [{"role": "assistant", "content": "..."}],
-            "rejected": [{"role": "assistant", "content": "..."}]
+            "conversations": [
+                {"from": "human", "value": "..."},
+                {"from": "gpt", "value": "..."}  # optional history
+            ],
+            "chosen": {"from": "gpt", "value": "..."},
+            "rejected": {"from": "gpt", "value": "..."}
         }
 
         Args:
@@ -48,12 +54,20 @@ class DPOFormatter(BaseFormatter):
         if best is None or worst is None:
             return []
 
-        # Build DPO example
+        # Convert messages to ShareGPT format
+        conversations = []
+        for msg in item["messages"]:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            from_tag = "human" if role == "user" else "gpt" if role == "assistant" else role
+            conversations.append({"from": from_tag, "value": content})
+
+        # Build DPO example (LLaMA-Factory ShareGPT preference format)
         return [
             {
-                "prompt": list(item["messages"]),
-                "chosen": [{"role": "assistant", "content": best["response"]}],
-                "rejected": [{"role": "assistant", "content": worst["response"]}],
+                "conversations": conversations,
+                "chosen": {"from": "gpt", "value": best["response"]},
+                "rejected": {"from": "gpt", "value": worst["response"]},
             }
         ]
 

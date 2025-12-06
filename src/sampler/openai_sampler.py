@@ -10,6 +10,7 @@ import time
 
 import httpx
 from openai import AsyncOpenAI
+from tqdm import tqdm
 
 from .base import BaseSampler
 
@@ -116,8 +117,8 @@ class OpenAISampler(BaseSampler):
         """
         semaphore = asyncio.Semaphore(self.concurrent_requests)
 
-        async def sample_one(item: dict) -> tuple[str, list[tuple[str, bool]]]:
-            """Sample one item and return (id, [(response, is_truncated), ...])."""
+        async def sample_one(item: dict, pbar: tqdm) -> tuple[str, list[str]]:
+            """Sample one item and return (id, [responses])."""
             async with semaphore:
                 try:
                     start_time = time.time()
@@ -148,15 +149,19 @@ class OpenAISampler(BaseSampler):
                     if self.verbose:
                         elapsed = time.time() - start_time
                         print(f"  [DONE]  {item['id'][:8]}... took {elapsed:.2f}s")
+
+                    pbar.update(1)
                     return item["id"], results
 
                 except Exception as e:
+                    pbar.update(1)
                     print(f"Error sampling {item['id']}: {e}")
                     return item["id"], []
 
-        # Launch all tasks concurrently
-        tasks = [sample_one(item) for item in items]
-        results = await asyncio.gather(*tasks)
+        # Use tqdm progress bar
+        with tqdm(total=len(items), desc="    Sampling", unit="req", leave=False) as pbar:
+            tasks = [sample_one(item, pbar) for item in items]
+            results = await asyncio.gather(*tasks)
 
         return dict(results)
 

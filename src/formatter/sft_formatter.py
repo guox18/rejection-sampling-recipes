@@ -2,6 +2,9 @@
 SFT Formatter.
 
 Formats rollouts for Supervised Fine-Tuning by selecting the best response.
+
+Output format follows LLaMA-Factory OpenAI format (a special case of ShareGPT):
+https://github.com/hiyouga/LLaMA-Factory/blob/main/data/README.md
 """
 
 from .base import BaseFormatter
