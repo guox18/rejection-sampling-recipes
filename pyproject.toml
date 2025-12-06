@@ -25,6 +25,7 @@ dependencies = [
     "aiohttp>=3.8.0",
     "openai>=1.0.0",
     "tqdm>=4.65.0",
+    "numpy>=1.24.0",
 ]
 
 [project.optional-dependencies]
@@ -34,6 +35,10 @@ dev = [
     "pytest-cov>=4.0.0",
     "ruff>=0.1.0",
     "pre-commit>=3.0.0",
+]
+vllm = [
+    "vllm>=0.8.5",
+    "ray>=2.9.0",
 ]
 
 [project.urls]
@@ -66,6 +71,7 @@ select = [
 ignore = [
     "E501",   # line too long (handled by formatter)
     "B008",   # do not perform function calls in argument defaults
+    "B027",   # empty method in abstract class (intentional for optional hooks)
 ]
 
 [tool.ruff.lint.isort]

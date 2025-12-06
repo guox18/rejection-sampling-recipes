@@ -46,8 +46,19 @@
 
 | 类型 | 说明 |
 |-----|------|
-| `openai-compatible-api` | 支持 OpenAI、DeepSeek、vLLM serve 等，asyncio 并发 |
-| `vllm-offline` | 本地离线推理，支持数据并行 |
+| `openai-compatible-api` | 支持 OpenAI、DeepSeek、vLLM serve、SGLang 等，asyncio 并发 |
+| `vllm-offline` | 本地离线推理，支持 Ray 数据并行 |
+
+**参数扩展**：不同模型/服务可能有特殊参数（如 OSS 模型的 `reasoning_effort`），通过 `extra_params` 传递：
+
+```yaml
+sampler:
+  type: openai-compatible-api
+  model: qwen
+  base_url: http://localhost:30120/v1
+  extra_params:
+    reasoning_effort: high        # OSS 模型特有参数
+```
 
 **截断处理**：默认丢弃被截断的 response（`drop_truncated: true`）
 
@@ -187,12 +198,14 @@ sampler:
   model: DeepSeek-R1
   base_url: null                 # Only used for openai-compatible-api
   model_path: null               # Only used for vllm-offline
+  num_gpus: null                 # Only used for vllm-offline, null = auto detect
   temperature: 0.7
   max_tokens: 2048
   top_p: 1.0
-  concurrent_requests: 50
+  concurrent_requests: 50        # Only used for openai-compatible-api
   timeout: 300
   drop_truncated: true           # Drop truncated responses
+  extra_params: {}               # Extra params for specific models (e.g., reasoning_effort for OSS models)
 
 verifier:
   type: math-rlvr                # Options: math-rlvr, mcq-rlvr, mcq-llm-as-judge

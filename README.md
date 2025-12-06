@@ -10,8 +10,8 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-[![🤗 Dataset](https://img.shields.io/badge/🤗%20Dataset-RSR--Examples-orange)](https://huggingface.co/datasets/yourname/rsr-examples)
-[![📊 WandB](https://img.shields.io/badge/📊%20WandB-Experiments-blue)](https://wandb.ai/yourname/rejection-sampling-recipes)
+<!-- [![🤗 Dataset](https://img.shields.io/badge/🤗%20Dataset-RSR--Examples-orange)](https://huggingface.co/datasets/yourname/rsr-examples)
+[![📊 WandB](https://img.shields.io/badge/📊%20WandB-Experiments-blue)](https://wandb.ai/yourname/rejection-sampling-recipes) -->
 
 [Features](#features) • [Installation](#installation) • [Quick Start](#quick-start) • [Documentation](#documentation) • [Contributing](#contributing)
 

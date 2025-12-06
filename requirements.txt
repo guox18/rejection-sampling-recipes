@@ -1,5 +1,9 @@
+# Base dependencies for rejection-sampling-recipes
+# For vLLM support, also install: pip install -r requirements-vllm.txt
+
 hydra-core>=1.3.0
 omegaconf>=2.3.0
 aiohttp>=3.8.0
 openai>=1.0.0
 tqdm>=4.65.0
+numpy>=1.24.0

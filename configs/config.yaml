@@ -7,6 +7,7 @@ data:
                                  # or specify: transforms/gsm8k.py:transform
 
 work_dir: null                   # null = auto generate timestamp path (output/YYYYMMDD_HHMMSS/)
+verbose: false                   # Enable verbose logging (show per-request timing, etc.)
 
 sampling:
   max_rollouts: 16               # Target: collect this many valid rollouts
@@ -18,17 +19,27 @@ sampler:
   type: openai-compatible-api    # Options: openai-compatible-api, vllm-offline
   model: DeepSeek-R1
   base_url: null                 # Only used for openai-compatible-api, defaults to https://api.openai.com/v1
+  api_key: null                  # API key, defaults to OPENAI_API_KEY env var
   model_path: null               # Only used for vllm-offline
+  tensor_parallel_size: 1        # vllm-offline: GPUs per worker for tensor parallelism
+  data_parallel_size: null       # vllm-offline: number of workers (null = auto: total_gpus / tp)
+  gpu_memory_utilization: 0.9    # vllm-offline: GPU memory utilization ratio
   temperature: 0.7               # Recommended 0.6 for long outputs (>8k), 0.8 for short outputs, default 0.7
   max_tokens: 2048
   top_p: 1.0
-  concurrent_requests: 50        # Concurrent batch size for async requests
+  concurrent_requests: 50        # Concurrent batch size for async requests (openai-compatible-api only)
   timeout: 300                   # Request timeout in seconds
   drop_truncated: true           # Drop truncated responses (finish_reason=length or missing eos_token)
+  extra_params: {}               # Extra params for specific models/services (e.g., reasoning_effort: high)
 
 verifier:
-  type: math-rlvr                # Options: math-rlvr, mcq-rlvr, mcq-llm-as-judge
-  score_type: float
+  type: mcq-rlvr                 # Options: mcq-rlvr, mcq-llm-as-judge
+  # Settings for mcq-llm-as-judge:
+  model: null                    # Judge model name (e.g., gpt-4o-mini, qwen)
+  base_url: null                 # Judge API base URL
+  api_key: null                  # Judge API key, defaults to OPENAI_API_KEY env var
+  temperature: 0.0               # Judge temperature (0.0 for deterministic)
+  max_tokens: 10                 # Judge max tokens
 
 formatter:
   - type: sft                    # Options: sft, dpo

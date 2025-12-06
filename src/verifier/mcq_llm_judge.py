@@ -7,6 +7,7 @@ Clips the thinking process before sending to judge.
 
 from openai import OpenAI
 
+from ..utils.response_processor import clip_thinking
 from .base import BaseVerifier
 from .registry import register_verifier
 
@@ -58,6 +59,7 @@ class MCQLLMJudgeVerifier(BaseVerifier):
         temperature: float = 0.0,
         max_tokens: int = 10,
         template: str | None = None,
+        **kwargs,  # Accept and ignore unused kwargs for compatibility
     ):
         """
         Initialize LLM judge.
@@ -75,10 +77,14 @@ class MCQLLMJudgeVerifier(BaseVerifier):
         self.max_tokens = max_tokens
         self.template = template or DEFAULT_JUDGE_TEMPLATE
 
-        # Initialize OpenAI client
+        # Initialize OpenAI client (use dummy API key as default for local APIs)
+        import os
+
+        resolved_api_key = api_key or os.getenv("OPENAI_API_KEY") or "dummy"
+
         self.client = OpenAI(
             base_url=base_url,
-            api_key=api_key,
+            api_key=resolved_api_key,
         )
 
     def verify(self, response: str, metadata: dict) -> float:
@@ -98,8 +104,8 @@ class MCQLLMJudgeVerifier(BaseVerifier):
         gold_target = metadata.get("answer") or metadata.get("gold_target", "")
         question = metadata.get("question") or metadata.get("origin_question", "")
 
-        # Clip thinking process
-        clipped_response = self._clip_thinking(response)
+        # Clip thinking process (use shared utility)
+        clipped_response = clip_thinking(response)
 
         # Build judge prompt
         prompt = self.template.format(
@@ -117,35 +123,6 @@ class MCQLLMJudgeVerifier(BaseVerifier):
             # Log error but return 0.0 (fail-safe)
             print(f"⚠️  LLM Judge error: {e}")
             return 0.0
-
-    def _clip_thinking(self, response: str) -> str:
-        """
-        Clip the thinking process from model response.
-
-        Handles multiple formats:
-        - R1 style: <think>...</think>content
-        - GPT-OSS style: <|channel|>analysis<|message|>...<|end|>...
-
-        Args:
-            response: Raw model response
-
-        Returns:
-            Response with thinking process removed
-        """
-        # GPT-OSS format
-        if "<|channel|>analysis<|message|>" in response:
-            separator = "<|end|><|start|>assistant<|channel|>final<|message|>"
-            if separator in response:
-                return response.split(separator)[-1]
-            else:
-                return ""  # No final answer
-
-        # R1 format: <think>...</think>
-        if "<think>" in response or "</think>" in response:
-            return response.split("</think>")[-1]
-
-        # No thinking tags, return as-is
-        return response
 
     def _call_judge(self, prompt: str) -> str:
         """

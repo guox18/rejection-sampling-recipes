@@ -49,6 +49,7 @@ htmlcov/
 
 # Project specific
 output/
+outputs/
 checkpoints/
 *.jsonl
 !examples/*.jsonl

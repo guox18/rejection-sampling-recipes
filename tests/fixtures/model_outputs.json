@@ -1,0 +1,138 @@
+{
+  "_description": "Offline model outputs for CI testing. Each entry contains model response and expected parsing results.",
+
+  "mcq_responses": [
+    {
+      "id": "r1_boxed_correct",
+      "model_type": "r1",
+      "has_reasoning": true,
+      "raw_response": "<think>Let me analyze this question step by step.\n\nThe question asks about...\n\nAfter careful consideration, option E is correct because...</think>\n\nThe answer is \\boxed{E}",
+      "expected": {
+        "thinking": "Let me analyze this question step by step.\n\nThe question asks about...\n\nAfter careful consideration, option E is correct because...",
+        "response": "The answer is \\boxed{E}",
+        "extracted_answer": "E"
+      },
+      "ground_truth": "E",
+      "expected_score": 1.0
+    },
+    {
+      "id": "r1_boxed_wrong",
+      "model_type": "r1",
+      "has_reasoning": true,
+      "raw_response": "<think>Analyzing the options...\n\nI believe A is correct.</think>\n\n\\boxed{A}",
+      "expected": {
+        "thinking": "Analyzing the options...\n\nI believe A is correct.",
+        "response": "\\boxed{A}",
+        "extracted_answer": "A"
+      },
+      "ground_truth": "E",
+      "expected_score": 0.0
+    },
+    {
+      "id": "gpt_oss_correct",
+      "model_type": "gpt-oss",
+      "has_reasoning": true,
+      "raw_response": "<|channel|>analysis<|message|>The user is asking about fundoplication procedures. Let me analyze each option...\n\nOption E correctly describes the rationale.<|end|><|start|>assistant<|channel|>final<|message|>**E – It reduces post-operative dysphagia and gas-bloat syndrome while still controlling reflux.**",
+      "expected": {
+        "thinking": "The user is asking about fundoplication procedures. Let me analyze each option...\n\nOption E correctly describes the rationale.",
+        "response": "**E – It reduces post-operative dysphagia and gas-bloat syndrome while still controlling reflux.**",
+        "extracted_answer": "E"
+      },
+      "ground_truth": "E",
+      "expected_score": 1.0
+    },
+    {
+      "id": "gpt_oss_truncated",
+      "model_type": "gpt-oss",
+      "has_reasoning": true,
+      "raw_response": "<|channel|>analysis<|message|>Let me think about this problem. The question involves...",
+      "expected": {
+        "thinking": "Let me think about this problem. The question involves...",
+        "response": "",
+        "extracted_answer": null
+      },
+      "ground_truth": "E",
+      "expected_score": 0.0,
+      "note": "Truncated - no final answer section"
+    },
+    {
+      "id": "no_reasoning_direct",
+      "model_type": "qwen-base",
+      "has_reasoning": false,
+      "raw_response": "The correct answer is E. The Toupet fundoplication reduces dysphagia compared to Nissen.",
+      "expected": {
+        "thinking": "",
+        "response": "The correct answer is E. The Toupet fundoplication reduces dysphagia compared to Nissen.",
+        "extracted_answer": "E"
+      },
+      "ground_truth": "E",
+      "expected_score": 1.0
+    },
+    {
+      "id": "no_reasoning_bold",
+      "model_type": "gpt-4o",
+      "has_reasoning": false,
+      "raw_response": "**Answer: C**\n\nUrban greening initiatives address multiple environmental stressors simultaneously.",
+      "expected": {
+        "thinking": "",
+        "response": "**Answer: C**\n\nUrban greening initiatives address multiple environmental stressors simultaneously.",
+        "extracted_answer": "C"
+      },
+      "ground_truth": "C",
+      "expected_score": 1.0
+    },
+    {
+      "id": "r1_text_boxed",
+      "model_type": "r1",
+      "has_reasoning": true,
+      "raw_response": "<think>Working through this problem...</think>\n\nTherefore, \\boxed{\\text{B}}",
+      "expected": {
+        "thinking": "Working through this problem...",
+        "response": "Therefore, \\boxed{\\text{B}}",
+        "extracted_answer": "B"
+      },
+      "ground_truth": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "chinese_answer",
+      "model_type": "qwen",
+      "has_reasoning": false,
+      "raw_response": "经过分析，答案是 A。因为...",
+      "expected": {
+        "thinking": "",
+        "response": "经过分析，答案是 A。因为...",
+        "extracted_answer": "A"
+      },
+      "ground_truth": "A",
+      "expected_score": 1.0
+    },
+    {
+      "id": "empty_response",
+      "model_type": "any",
+      "has_reasoning": false,
+      "raw_response": "",
+      "expected": {
+        "thinking": "",
+        "response": "",
+        "extracted_answer": null
+      },
+      "ground_truth": "E",
+      "expected_score": 0.0
+    },
+    {
+      "id": "only_think_tag_end",
+      "model_type": "qwq",
+      "has_reasoning": true,
+      "raw_response": "Let me work through this step by step...\n\nAfter analysis, E is correct.</think>\n\n\\boxed{E}",
+      "expected": {
+        "thinking": "Let me work through this step by step...\n\nAfter analysis, E is correct.",
+        "response": "\\boxed{E}",
+        "extracted_answer": "E"
+      },
+      "ground_truth": "E",
+      "expected_score": 1.0,
+      "note": "Some chat templates don't include <think>, only </think>"
+    }
+  ]
+}

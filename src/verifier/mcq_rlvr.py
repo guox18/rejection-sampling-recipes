@@ -19,11 +19,19 @@ class MCQRLVRVerifier(BaseVerifier):
     Works best with R1-style models that output answers in \\boxed{} format.
     """
 
+    def __init__(self, **kwargs):
+        """Initialize verifier. Accepts **kwargs for compatibility."""
+        # Rule-based verifier doesn't need any config
+        pass
+
     # Patterns for extracting answers, ordered by priority
     EXTRACT_PATTERNS = [
         r"\\boxed\{([^}]+)\}",  # \boxed{A} or \boxed{\text{A}}
         r"\$\\boxed\{([^}]+)\}\$",  # $\boxed{A}$
         r"\\text\{Answer:\s*([A-Z])\}",  # \text{Answer: A}
+        r"\*\*Answer:\s*([A-Z])",  # **Answer: E** (markdown bold)
+        r"Answer:\s*([A-Z])\b",  # Answer: E (plain text)
+        r"answer:\s*([A-Z])\b",  # answer: E (lowercase)
         r"答案[是为]?\s*[:：]?\s*([A-Z])",  # Chinese: 答案是 A
         r"选项?\s*([A-Z])\s*是?正确",  # 选项 A 正确
     ]
