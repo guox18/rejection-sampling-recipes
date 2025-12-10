@@ -8,9 +8,20 @@ Usage:
     uv run python run.py \
         data.input_path=... \
         data.preprocess.transform=examples/nemotron-post-training-dataset-v2/transform.py:transform
+
+    # With format instruction suffix:
+    uv run python run.py \
+        data.input_path=... \
+        data.preprocess.transform=examples/nemotron-post-training-dataset-v2/transform.py:transform_with_format_instruction
 """
 
 import re
+
+# Default format instruction to append to questions
+# Instructs models to use \boxed{} format for answers
+DEFAULT_FORMAT_INSTRUCTION = (
+    "\n\nPlease reason step by step, and put your final answer within \\boxed{}."
+)
 
 
 def transform(item: dict) -> dict | None:
@@ -50,6 +61,58 @@ def transform(item: dict) -> dict | None:
 
     # Convert from original format
     return _convert_from_original(item)
+
+
+def transform_with_format_instruction(item: dict) -> dict | None:
+    """
+    Transform with format instruction suffix appended to questions.
+
+    Same as transform(), but appends a format instruction to guide
+    models to output answers in \\boxed{} format.
+
+    Example suffix:
+        "Please reason step by step, and put your final answer within \\boxed{}."
+    """
+    result = transform(item)
+    if result is None:
+        return None
+
+    return _append_format_instruction(result, DEFAULT_FORMAT_INSTRUCTION)
+
+
+def _append_format_instruction(item: dict, instruction: str) -> dict:
+    """
+    Append format instruction to the last user message.
+
+    Args:
+        item: Transformed item with messages
+        instruction: Format instruction to append
+
+    Returns:
+        Item with format instruction appended to last user message
+    """
+    messages = item.get("messages", [])
+    if not messages:
+        return item
+
+    # Find last user message and append instruction
+    new_messages = []
+    for i, msg in enumerate(messages):
+        if msg["role"] == "user" and i == len(messages) - 1:
+            # Append instruction to last user message
+            new_messages.append(
+                {
+                    "role": "user",
+                    "content": msg["content"] + instruction,
+                }
+            )
+        else:
+            new_messages.append(msg)
+
+    return {
+        **item,
+        "messages": new_messages,
+    }
 
 
 def _is_target_format(item: dict) -> bool:

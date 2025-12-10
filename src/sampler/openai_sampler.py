@@ -48,6 +48,7 @@ class OpenAISampler(BaseSampler):
             extra_params: Extra parameters for API requests (e.g., reasoning_effort)
             verbose: Enable verbose logging (per-request timing)
         """
+        super().__init__()
         self.model = model
         self.verbose = verbose
         self.base_url = base_url or "https://api.openai.com/v1"
@@ -136,15 +137,21 @@ class OpenAISampler(BaseSampler):
                     )
 
                     results = []
+                    truncated_in_batch = 0
                     for choice in response.choices:
                         content = choice.message.content or ""
                         is_truncated = choice.finish_reason == "length"
 
                         # Skip truncated responses if configured
                         if self.drop_truncated and is_truncated:
+                            truncated_in_batch += 1
                             continue
 
                         results.append(content)
+
+                    # Update statistics
+                    self.total_generated += len(response.choices)
+                    self.truncated_count += truncated_in_batch
 
                     if self.verbose:
                         elapsed = time.time() - start_time

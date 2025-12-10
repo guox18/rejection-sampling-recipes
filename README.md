@@ -18,15 +18,17 @@
 
 ## 🤔 Why This Project?
 
-The community already has great tools for inference ([vLLM](https://github.com/vllm-project/vllm), [SGLang](https://github.com/sgl-project/sglang)), training ([LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory), [veRL](https://github.com/volcengine/verl)), and evaluation ([lm-eval-harness](https://github.com/EleutherAI/lm-evaluation-harness), [OpenCompass](https://github.com/open-compass/opencompass)). But when it comes to **synthetic data generation**, most of us end up writing one-off scripts—and learning the same lessons the hard way. What's missing are **reproducible recipes** that provide end-to-end solutions with concrete configs, parameters, and workflows you can follow.
+The community already has great tools for inference ([vLLM](https://github.com/vllm-project/vllm), [SGLang](https://github.com/sgl-project/sglang)), training ([LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory), [veRL](https://github.com/volcengine/verl)), and evaluation ([lm-eval-harness](https://github.com/EleutherAI/lm-evaluation-harness), [OpenCompass](https://github.com/open-compass/opencompass)). But when it comes to **rejection sampling / Best-of-N** for distillation or RL data curation, most of us end up writing one-off scripts—and learning the same lessons the hard way. What's missing are **reproducible recipes** that provide end-to-end solutions with concrete configs, parameters, and workflows you can follow.
 
 This project started after a few embarrassing moments:
 
-> 😱 Distilled long-reasoning traces, trained for days, everything looked fine. Only when evaluation scores came back terrible did we dig into the data—`max_tokens=2048` had silently truncated all the chain-of-thought.
+> ✂️ Distilled long-reasoning traces, trained for days, everything looked fine. Evaluation scores came back terrible—dug into the code and found `max_tokens=2048` had silently truncated all the chain-of-thought.
 
-> 😱 Wanted to split easy vs hard problems for curriculum learning. Realized we never saved pass rates. Had to re-run everything.
+> 💸 Sampled 32 rollouts per question to ensure we solved the hard ones, but easy problems passed on the first try. Wasted 90% of compute on samples we'd never use.
 
-> 😱 Pass rate looked suspiciously low. Turned out our answer extractor was grabbing `{"answer": "B"}` from the model's *thinking process*, not its final answer. Thousands of correct responses marked wrong.
+> 😵 Pass rate looked suspiciously low. Turned out our answer extractor was grabbing `{"answer": "B"}` from the model's *thinking process*, not its final answer. Tons of correct responses marked wrong.
+
+> 🐢 LLM-as-Judge verification was slow because imprecise prompts led to verbose explanations. Each judgment took seconds—unnoticeable when testing manually, but severely impacted efficiency at scale.
 
 **RSR is our attempt to avoid repeating these mistakes.** It handles the trivial-but-important details: truncation detection, checkpoint/resume, pass rate tracking, and answer extraction that actually works across different model output formats.
 
@@ -34,20 +36,21 @@ This project started after a few embarrassing moments:
 
 ## ✨ What's Included
 
-- **End-to-end workflow** — From raw data to training-ready JSONL, with configs you can actually reproduce
-- **Smart early stopping** — Stop sampling once you have what you need (1 pass for SFT, 1 pass + 1 fail for DPO)
-- **Checkpoint & resume** — Shard-based storage that handles 100k+ samples; resume from any interruption
-- **Quality stats** — Pass rates, token distributions, and sampling efficiency, saved automatically
-- **Truncation handling** — Detects and discards truncated responses so you don't train on garbage
+- **Reproducible baselines** — End-to-end recipes with concrete configs, not just code snippets
+- **Avoid common pitfalls** — Truncation detection, answer extraction from CoT, early stopping done right
+- **Efficient concurrency** — Asyncio for API calls, Ray DP + TP for local inference; no more single-threaded scripts
+- **Checkpoint & resume** — Shard-based storage that handles 100k+ samples; easily resume from the last saved shard
+- **AI-friendly codebase** — Fully AI-generated with docs optimized for AI reading; easy to customize with your favorite coding assistant
 
 ## 📋 Supported Tasks
 
-| Task | Verifier | Status |
-|------|----------|--------|
-| Multiple Choice (Single) | Rule-based | ✅ |
-| Multiple Choice (Multi) | LLM-as-Judge | ✅ |
-| Math Reasoning | Rule-based | ✅ |
-| General Chat | Reward Model | 🚧 TODO |
+| Task | Verifier | Status | Recipe | WandB |
+|------|----------|--------|--------|-------|
+| Multiple Choice | Rule-based / LLM-as-Judge | ✅ | [Link]() | [Link]() |
+| Math Reasoning | Rule-based | 🚧 TODO | | |
+| Instruction Following | LLM-as-Judge | 🚧 TODO | | |
+| General Chat | Reward Model | 🚧 TODO | | |
+| Multimodal | TBD | 🚧 TODO | | |
 
 ## 📦 Installation
 
@@ -74,7 +77,6 @@ pip install -r requirements.txt
 ```bash
 uv run python run.py \
   data.input_path=data/your_data.jsonl \
-  data.preprocess.transform=transforms/your_transform.py:transform \
   sampler.type=vllm-offline \
   sampler.model_path=/path/to/model \
   sampler.tensor_parallel_size=2 \
@@ -90,7 +92,6 @@ uv run python run.py \
 ```bash
 uv run python run.py \
   data.input_path=data/your_data.jsonl \
-  data.preprocess.transform=transforms/your_transform.py:transform \
   sampler.type=openai-compatible-api \
   sampler.base_url=http://localhost:8000/v1 \
   sampler.model=your-model \
@@ -145,11 +146,19 @@ work_dir: null                   # null = auto generate: output/YYYYMMDD_HHMMSS/
 verbose: false                   # Enable verbose logging
 
 sampling:
-  max_rollouts: 16               # Target rollouts per sample
-  step_size: 4                   # Rollouts per step
-  max_steps: 8                   # Max steps (handles truncation retries)
-  early_stop: true               # Stop when formatter requirements met
+  max_rollouts: 16               # Target: max valid rollouts to collect per prompt
+  step_size: 4                   # Batch size: responses sampled per step
+  max_steps: 5                   # Hard limit: max sampling steps
 
+  early_stop: true               # Check after each step if collected data meets formatter requirements
+                                 # true: stop early when requirements met (pass_rate reflects pass@n)
+                                 # false: always sample max_steps × step_size (for accurate difficulty estimation)
+
+# Constraint: max_steps × step_size ≥ max_rollouts (to handle truncation/invalid responses)
+```
+
+
+```yaml
 sampler:
   type: openai-compatible-api    # Options: openai-compatible-api, vllm-offline
   model: DeepSeek-R1
@@ -195,7 +204,7 @@ shard:
   "messages": [
     {"role": "user", "content": "Which of the following best explains...?\n\nA: Option A\nB: Option B\nC: Option C"}
   ],
-  "metadata": {"answer": "B", "category": "stem"}
+  "metadata": {"answer": "B"}
 }
 ```
 
@@ -224,21 +233,58 @@ shard:
 
 </details>
 
-## 🛠️ Development
+### Pipeline Architecture:
 
-```bash
-# Install dev dependencies
-uv sync --all-extras
+```mermaid
+flowchart LR
+    subgraph Input
+        A[("📄 Data")]
+    end
 
-# Setup pre-commit
-uv run pre-commit install
+    subgraph Rollout["Rollout Loop (per shard)"]
+        direction TB
+        B["🎲 Sampler"]
+        C["✓ Verifier"]
+        B --> C
+    end
 
-# Run linter
-uv run ruff check .
+    subgraph Output
+        E["📊 Formatter"]
+        F[("🎯 Train Data")]
+        E --> F
+    end
 
-# Run tests
-uv run pytest
+    A --> Rollout
+    Rollout --> E
+
+    style A fill:#e3f2fd,stroke:#1565c0
+    style B fill:#fff3e0,stroke:#e65100
+    style C fill:#f3e5f5,stroke:#7b1fa2
+    style E fill:#e8f5e9,stroke:#2e7d32
+    style F fill:#e8f5e9,stroke:#2e7d32
 ```
+
+```mermaid
+flowchart LR
+    A["🔄 Step 1..max_steps"] --> B["🎲 Sample step_size"]
+    B --> C["✓ Verify"]
+    C --> D{early_stop?}
+    D -->|Yes| E{"📊 Formatter<br/>satisfied?"}
+    D -->|No| F{more steps?}
+    E -->|✓| G["✅ Done"]
+    E -->|✗| F
+    F -->|✓| A
+    F -->|✗| G
+
+    style A fill:#e1f5fe,stroke:#01579b
+    style B fill:#fff3e0,stroke:#e65100
+    style C fill:#f3e5f5,stroke:#7b1fa2
+    style D fill:#fce4ec,stroke:#c2185b
+    style E fill:#e8f5e9,stroke:#2e7d32
+    style F fill:#fce4ec,stroke:#c2185b
+    style G fill:#c8e6c9,stroke:#2e7d32
+```
+
 
 ## 🤝 Contributing
 

@@ -10,6 +10,11 @@ from abc import ABC, abstractmethod
 class BaseSampler(ABC):
     """Base class for all samplers."""
 
+    def __init__(self):
+        """Initialize base sampler with statistics counters."""
+        self.total_generated = 0
+        self.truncated_count = 0
+
     async def initialize(self) -> None:
         """
         Initialize sampler and validate configuration.

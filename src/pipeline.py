@@ -7,6 +7,7 @@ Orchestrates the sampling, verification, and formatting workflow.
 import asyncio
 import json
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -33,6 +34,11 @@ class Pipeline:
             cfg: OmegaConf configuration object
         """
         self.cfg = cfg
+
+        # Time tracking
+        self._start_time = time.time()
+        self._sampling_time = 0.0
+        self._verify_time = 0.0
 
         # Setup working directory
         self.work_dir = self._setup_work_dir()
@@ -179,6 +185,17 @@ class Pipeline:
         Multi-round sampling for a shard.
 
         Works for BOTH OpenAI API and vLLM!
+
+        Sampling strategy:
+        - max_rollouts: Target number of valid rollouts per prompt (soft limit)
+        - step_size: Batch size for each sampling round
+        - max_steps: Maximum number of sampling rounds (hard limit)
+        - Total sampling budget: max_steps × step_size attempts
+
+        The hard limit (max_steps × step_size) should be ≥ max_rollouts to account
+        for truncated responses that are dropped. For example:
+        - max_rollouts=16, step_size=4, max_steps=4: 16 attempts (1× buffer)
+        - max_rollouts=16, step_size=4, max_steps=8: 32 attempts (2× buffer)
         """
         # Initialize rollouts for each item
         rollouts_map: dict[str, list[dict]] = {item["id"]: [] for item in items}
@@ -194,15 +211,18 @@ class Pipeline:
                 break
 
             print(
-                f"  Step {step + 1}/{max_steps}: "
-                f"sampling {len(remaining_items)} items × {step_size}"
+                f"\n  ▶ Step {step + 1}/{max_steps}: "
+                f"{len(remaining_items)} items × {step_size} samples"
             )
 
             # Step 1: Sample batch
+            sample_start = time.time()
             responses_map = await self.sampler.sample_batch(
                 remaining_items,
                 n=step_size,
             )
+            sample_elapsed = time.time() - sample_start
+            self._sampling_time += sample_elapsed
 
             # Step 2: Verify and collect (with progress bar)
             # Flatten all (item, response) pairs for verification
@@ -213,12 +233,14 @@ class Pipeline:
                 for resp in responses:
                     verify_tasks.append((item_id, item["metadata"], resp))
 
-            # Verify with progress bar
+            # Verify with progress bar (less verbose)
+            verify_start = time.time()
             for item_id, metadata, resp in tqdm(
                 verify_tasks,
-                desc="    verifying",
+                desc=f"    Step {step + 1} verifying",
                 leave=False,
                 disable=len(verify_tasks) < 10,  # Hide for small batches
+                mininterval=1.0,  # Update at most once per second
             ):
                 score = self.verifier.verify(resp, metadata)
                 rollouts_map[item_id].append(
@@ -227,8 +249,11 @@ class Pipeline:
                         "score": score,
                     }
                 )
+            verify_elapsed = time.time() - verify_start
+            self._verify_time += verify_elapsed
 
             # Step 3: Remove satisfied items (early stopping)
+            prev_remaining = len(remaining_items)
             if early_stop:
                 remaining_items = [
                     item
@@ -240,6 +265,14 @@ class Pipeline:
                 remaining_items = [
                     item for item in remaining_items if len(rollouts_map[item["id"]]) < max_rollouts
                 ]
+
+            # Print step summary
+            satisfied = prev_remaining - len(remaining_items)
+            print(
+                f"    ✓ Step {step + 1} done: "
+                f"satisfied={satisfied}, remaining={len(remaining_items)} "
+                f"(sample: {sample_elapsed:.1f}s, verify: {verify_elapsed:.1f}s)"
+            )
 
         # Build final results
         results = []
@@ -332,6 +365,15 @@ class Pipeline:
                     if rollouts:
                         pass_rates.append(passed / len(rollouts))
 
+        # Calculate timing
+        total_time = time.time() - self._start_time
+        rollout_time = self._sampling_time + self._verify_time
+
+        # Get truncation statistics from sampler
+        total_generated = self.sampler.total_generated
+        truncated_count = self.sampler.truncated_count
+        truncation_rate = truncated_count / total_generated if total_generated > 0 else 0
+
         # Calculate statistics
         stats = {
             "total_items": total_items,
@@ -341,6 +383,15 @@ class Pipeline:
             "overall_pass_rate": total_passed / total_rollouts if total_rollouts > 0 else 0,
             "avg_pass_rate_per_item": sum(pass_rates) / len(pass_rates) if pass_rates else 0,
             "items_with_pass": sum(1 for r in pass_rates if r > 0),
+            # Truncation statistics
+            "total_generated": total_generated,
+            "truncated_count": truncated_count,
+            "truncation_rate": round(truncation_rate, 4),
+            # Timing (in seconds)
+            "total_time_sec": round(total_time, 2),
+            "rollout_time_sec": round(rollout_time, 2),
+            "sampling_time_sec": round(self._sampling_time, 2),
+            "verify_time_sec": round(self._verify_time, 2),
         }
 
         # Save stats
@@ -349,9 +400,16 @@ class Pipeline:
             json.dump(stats, f, indent=2)
 
         print(f"  Total items: {stats['total_items']}")
-        print(f"  Total rollouts: {stats['total_rollouts']}")
+        print(
+            f"  Total rollouts: {stats['total_rollouts']} (generated: {total_generated}, truncated: {truncated_count})"
+        )
+        print(f"  Truncation rate: {truncation_rate:.2%}")
         print(f"  Overall pass rate: {stats['overall_pass_rate']:.2%}")
         print(f"  Items with at least 1 pass: {stats['items_with_pass']}")
+        print(
+            f"  Timing: total={total_time:.1f}s, rollout={rollout_time:.1f}s "
+            f"(sampling={self._sampling_time:.1f}s, verify={self._verify_time:.1f}s)"
+        )
         print(f"  Saved stats to {stats_path}")
 
 

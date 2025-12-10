@@ -51,12 +51,17 @@ class VLLMWorker:
         items: list[dict],
         n: int,
         drop_truncated: bool = True,
-    ) -> list[tuple[str, list[str]]]:
-        """Called multiple times WITHOUT reloading model."""
+    ) -> tuple[list[tuple[str, list[str]]], int, int]:
+        """
+        Called multiple times WITHOUT reloading model.
+
+        Returns:
+            Tuple of (results, total_generated, truncated_count)
+        """
         from vllm import SamplingParams
 
         if not items:
-            return []
+            return [], 0, 0
 
         # Prepare prompts using tokenizer's chat template
         # extra_params (e.g., reasoning_effort) are passed to chat template, not SamplingParams
@@ -81,24 +86,29 @@ class VLLMWorker:
             ),
         )
 
-        # Collect results
+        # Collect results with truncation statistics
         results = []
+        total_generated = 0
+        truncated_count = 0
         eos_token_id = self.tokenizer.eos_token_id
+
         for item, output in zip(items, outputs, strict=False):
             responses = []
             for o in output.outputs:
+                total_generated += 1
                 # Check truncation by finish_reason or missing EOS token
                 is_truncated = o.finish_reason == "length" or (
                     len(o.token_ids) > 0 and o.token_ids[-1] != eos_token_id
                 )
 
                 if drop_truncated and is_truncated:
+                    truncated_count += 1
                     continue
 
                 responses.append(o.text)
             results.append((item["id"], responses))
 
-        return results
+        return results, total_generated, truncated_count
 
 
 class VLLMSampler(BaseSampler):
@@ -132,6 +142,7 @@ class VLLMSampler(BaseSampler):
             extra_params: Extra parameters for vLLM SamplingParams
             verbose: Enable verbose logging
         """
+        super().__init__()
         self.model_path = model_path
         self.tensor_parallel_size = tensor_parallel_size
         self.data_parallel_size = data_parallel_size
@@ -152,14 +163,25 @@ class VLLMSampler(BaseSampler):
         print(f"  Tensor parallel size: {self.tensor_parallel_size}")
 
         if not ray.is_initialized():
-            # Disable automatic working_dir packaging to avoid creating new venvs
-            # that miss optional dependencies (ray, vllm)
-            ray.init(ignore_reinit_error=True, runtime_env={"working_dir": None})
+            # Try to connect to existing Ray cluster (started via `ray start`)
+            # If no cluster exists, start a local one
+            # address="auto" will connect to existing cluster if RAY_ADDRESS is set
+            # or if a local Ray instance is running
+            ray.init(
+                address="auto",
+                ignore_reinit_error=True,
+                runtime_env={"working_dir": None},
+            )
 
-        # Calculate data parallel size
-        import torch
+        # Get total GPUs from Ray cluster (works across multiple nodes)
+        total_gpus = int(ray.cluster_resources().get("GPU", 0))
+        if total_gpus == 0:
+            # Fallback to local GPU count if Ray doesn't report GPUs
+            import torch
 
-        total_gpus = torch.cuda.device_count()
+            total_gpus = torch.cuda.device_count()
+
+        print(f"  Total GPUs in Ray cluster: {total_gpus}")
 
         if self.data_parallel_size is not None:
             dp_size = self.data_parallel_size
@@ -211,7 +233,7 @@ class VLLMSampler(BaseSampler):
         test_futures = [
             worker.sample.remote([test_item], 1, self.drop_truncated) for worker in self.workers
         ]
-        ray.get(test_futures)  # Block until all loaded
+        ray.get(test_futures)  # Block until all loaded (returns tuple now, but we ignore it)
 
         print(f"✓ All {dp_size} workers ready! (TP={tp_size}, DP={dp_size})")
 
@@ -254,9 +276,11 @@ class VLLMSampler(BaseSampler):
                 # Update progress by the number of items this worker processed
                 pbar.update(future_to_size[done_future])
 
-        # Flatten to dict
+        # Flatten to dict and aggregate statistics
         results_dict = {}
-        for results in results_list:
+        for results, total_gen, trunc_count in results_list:
+            self.total_generated += total_gen
+            self.truncated_count += trunc_count
             for item_id, responses in results:
                 results_dict[item_id] = responses
 

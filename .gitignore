@@ -52,6 +52,7 @@ outputs/
 checkpoints/
 *.jsonl
 !examples/*.jsonl
+examples/nemotron-post-training-dataset-v2/run_vllm_offline.sh
 
 # OS
 .DS_Store
@@ -60,3 +61,4 @@ Thumbs.db
 # Logs
 *.log
 logs/
+examples/nemotron-post-training-dataset-v2/recipes
