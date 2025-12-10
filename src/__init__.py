@@ -18,19 +18,27 @@ from .preprocessor import DataPreprocessor
 from .sampler import (
     BaseSampler,
     OpenAISampler,
-    VLLMSampler,
     get_sampler,
 )
 from .state import StateManager
 from .verifier import (
     BaseVerifier,
-    MathRLVRVerifier,
     MCQLLMJudgeVerifier,
     MCQRLVRVerifier,
     get_verifier,
     list_verifiers,
     register_verifier,
 )
+
+
+# Lazy import for VLLMSampler to avoid requiring vllm/ray for basic usage
+def __getattr__(name):
+    if name == "VLLMSampler":
+        from .sampler.vllm_sampler import VLLMSampler
+
+        return VLLMSampler
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     # Sampler
@@ -40,7 +48,6 @@ __all__ = [
     "get_sampler",
     # Verifier
     "BaseVerifier",
-    "MathRLVRVerifier",
     "MCQLLMJudgeVerifier",
     "MCQRLVRVerifier",
     "get_verifier",

@@ -96,8 +96,8 @@ class TestDPOFormatter:
         ]
         result = formatter.format(sample_item, rollouts)
         assert len(result) == 1
-        assert result[0]["chosen"][0]["content"] == "The answer is 4"
-        assert result[0]["rejected"][0]["content"] == "The answer is 5"
+        assert result[0]["chosen"]["value"] == "The answer is 4"
+        assert result[0]["rejected"]["value"] == "The answer is 5"
 
     def test_format_only_pass(self, formatter, sample_item):
         """Should return empty when only pass, no fail."""
