@@ -134,7 +134,7 @@ class Pipeline:
                     print(f"Skipping completed shard {shard_idx}")
                     continue
 
-                print(f"\n--- Shard {shard_idx}/{len(shards) - 1} " f"({len(shard)} items) ---")
+                print(f"\n--- Shard {shard_idx}/{len(shards) - 1} ({len(shard)} items) ---")
 
                 self.state.mark_shard_started(shard_idx)
 

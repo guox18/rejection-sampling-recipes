@@ -6,7 +6,6 @@ Provides samplers for generating model responses.
 
 from .base import BaseSampler
 from .openai_sampler import OpenAISampler
-from .vllm_sampler import VLLMSampler
 
 
 def get_sampler(cfg, verbose: bool = False) -> BaseSampler:
@@ -40,6 +39,9 @@ def get_sampler(cfg, verbose: bool = False) -> BaseSampler:
             verbose=verbose,
         )
     elif sampler_type == "vllm-offline":
+        # Lazy import to avoid requiring vllm/ray for basic usage
+        from .vllm_sampler import VLLMSampler
+
         return VLLMSampler(
             model_path=cfg.model_path,
             tensor_parallel_size=cfg.get("tensor_parallel_size", 1),
@@ -62,6 +64,5 @@ def get_sampler(cfg, verbose: bool = False) -> BaseSampler:
 __all__ = [
     "BaseSampler",
     "OpenAISampler",
-    "VLLMSampler",
     "get_sampler",
 ]
