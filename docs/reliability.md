@@ -140,3 +140,89 @@ RSR will:
 | API timeout | Failed requests logged, continue with next batch |
 
 ---
+
+## Verifier Robustness Testing
+
+### The Problem
+
+Different models output answers in various formats:
+- `\boxed{A}`
+- `\boxed{\textbf{A}}`
+- `\boxed{A: Option text}`
+- `\boxed{\mathrm{A}}`
+
+Rule-based verifiers may miss edge cases, causing valid answers to be marked incorrect.
+
+### The Solution
+
+RSR includes a dev tool that compares rule-based verifiers against LLM judge to identify inconsistencies:
+
+```bash
+# Setup: copy config template and fill in API keys
+cp configs/dev/test_verifier.example.yaml configs/dev/test_verifier.yaml
+
+# Test single model
+uv run python scripts/dev_test_mcq_verifier.py \
+  --config configs/dev/test_verifier.yaml \
+  -i data/your_data.jsonl \
+  -n 20 \
+  -m deepseek-r1
+
+# Test multiple models at once
+uv run python scripts/dev_test_mcq_verifier.py \
+  -i data/your_data.jsonl \
+  -m qwen,deepseek-r1,deepseek-v3
+```
+
+### How It Works
+
+1. **Sample questions** from your dataset
+2. **Generate responses** from one or more models
+3. **Compare** rule-based verifier vs LLM judge
+4. **Report** inconsistencies for review
+
+```
+🔍 Comparing verifiers...
+   Rule-based: MCQRLVRVerifier (fast, regex-based)
+   LLM Judge:  qwen @ http://your-endpoint/v1
+  [1/10] sample_1... ✓ (C) [✗]
+  [2/10] sample_2... ✓ (D) [✓]
+  ...
+  [9/10] sample_9... ⚠️  INCONSISTENT! rule=0.0 vs llm=1.0
+```
+
+### Workflow
+
+When inconsistencies are found:
+
+1. **Review** the flagged samples manually
+2. **Update** the regex in `src/verifier/mcq_rlvr.py` if rule-based missed valid formats
+3. **Add** regression tests to `tests/test_verifier.py`
+
+### Configuration
+
+All settings are in `configs/dev/test_verifier.yaml`:
+
+```yaml
+sampling:
+  size: 10          # Questions to sample
+  seed: 42
+
+models:
+  qwen:
+    base_url: "http://your-endpoint/v1"
+    model_id: "qwen"
+    api_key: "your-key"
+  deepseek-r1:
+    base_url: "https://your-endpoint/v1"
+    model_id: "deepseek-r1"
+    api_key: "your-key"
+
+# Test multiple models (or use -m flag on CLI)
+test_models: ["qwen", "deepseek-r1"]
+
+llm_judge:
+  base_url: "http://your-judge/v1"
+  model: "qwen"
+```
+---

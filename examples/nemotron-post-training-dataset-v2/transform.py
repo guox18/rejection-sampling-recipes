@@ -5,11 +5,12 @@ Converts the original format (with assistant response) to pipeline format
 (user message only + metadata with ground truth answer).
 
 Usage:
+    # Default: no format instruction suffix
     uv run python run.py \
         data.input_path=... \
         data.preprocess.transform=examples/nemotron-post-training-dataset-v2/transform.py:transform
 
-    # With format instruction suffix:
+    # Optional: with format instruction suffix
     uv run python run.py \
         data.input_path=... \
         data.preprocess.transform=examples/nemotron-post-training-dataset-v2/transform.py:transform_with_format_instruction

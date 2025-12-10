@@ -290,6 +290,9 @@ flowchart LR
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
+- **Adding a new verifier?** See [Verifier Development Guide](src/verifier/README.md)
+- **Testing verifier robustness?** Compare rule-based vs LLM judge across multiple models. See [Verifier Testing](docs/reliability.md#verifier-robustness-testing)
+
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

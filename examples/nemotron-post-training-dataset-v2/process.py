@@ -180,7 +180,13 @@ class ProcessStats:
         print("=" * 60)
 
 
-def process_item(item: dict, idx: int, stats: ProcessStats) -> dict | None:
+def process_item(
+    item: dict,
+    idx: int,
+    stats: ProcessStats,
+    add_format_instruction: bool = False,
+    format_instruction: str = None,
+) -> dict | None:
     """
     处理单个数据样本
 
@@ -188,6 +194,8 @@ def process_item(item: dict, idx: int, stats: ProcessStats) -> dict | None:
         item: 原始数据样本（包含 messages 字段）
         idx: 样本索引
         stats: 统计信息对象
+        add_format_instruction: 是否添加格式指令后缀
+        format_instruction: 格式指令内容（如果为None则使用默认指令）
 
     Returns:
         转换后的数据样本，如果无效则返回 None
@@ -239,6 +247,14 @@ def process_item(item: dict, idx: int, stats: ProcessStats) -> dict | None:
     # 转换为框架格式
     stats.success += 1
 
+    # 如果需要添加格式指令
+    if add_format_instruction:
+        if format_instruction is None:
+            format_instruction = (
+                "\n\nPlease reason step by step, and put your final answer within \\boxed{}."
+            )
+        user_content = user_content + format_instruction
+
     return {
         "id": item.get("uuid", f"item_{idx}"),
         "messages": [{"role": "user", "content": user_content}],
@@ -278,6 +294,19 @@ def main():
         help="失败日志文件路径 (默认: <output>_failed.jsonl)",
     )
 
+    parser.add_argument(
+        "--add-format-instruction",
+        action="store_true",
+        help="是否在问题末尾添加格式指令后缀（引导模型使用 \\boxed{} 格式）",
+    )
+
+    parser.add_argument(
+        "--format-instruction",
+        type=str,
+        default=None,
+        help="自定义格式指令内容 (默认: 'Please reason step by step, and put your final answer within \\boxed{}.')",
+    )
+
     args = parser.parse_args()
 
     # 确定输入输出路径
@@ -302,7 +331,9 @@ def main():
     processed_data = []
 
     for idx, item in enumerate(data):
-        result = process_item(item, idx, stats)
+        result = process_item(
+            item, idx, stats, args.add_format_instruction, args.format_instruction
+        )
         if result is not None:
             processed_data.append(result)
 

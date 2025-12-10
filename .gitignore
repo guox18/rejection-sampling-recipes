@@ -45,6 +45,7 @@ env/
 htmlcov/
 .tox/
 .nox/
+.dev/
 
 # Project specific
 output/
@@ -62,3 +63,6 @@ Thumbs.db
 *.log
 logs/
 examples/nemotron-post-training-dataset-v2/recipes
+
+# Dev configs with API keys (use *.example.yaml as template)
+configs/dev/test_verifier.yaml

@@ -4,7 +4,11 @@
 # ============================================================
 #
 # 用法:
-#   bash run_pipeline.sh [HF_TOKEN]
+#   bash run_pipeline.sh [HF_TOKEN] [选项]
+#
+# 选项:
+#   --add-format-instruction    在问题末尾添加格式指令后缀
+#   --output-dir DIR           指定输出目录 (默认: $PROJECT_ROOT/data/Nemotron-Post-Training-Dataset-v2)
 #
 # 流程:
 #   1. 下载数据 (stem.jsonl)
@@ -19,10 +23,38 @@ set -e  # 遇到错误时停止
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# 数据输出目录
+# 数据输出目录 (默认值)
 DATA_DIR="$PROJECT_ROOT/data/Nemotron-Post-Training-Dataset-v2"
+
+# 解析命令行参数
+ADD_FORMAT_INSTRUCTION=""
+HF_TOKEN=""
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --add-format-instruction)
+            ADD_FORMAT_INSTRUCTION="--add-format-instruction"
+            shift
+            ;;
+        --output-dir)
+            DATA_DIR="$2"
+            shift 2
+            ;;
+        *)
+            # 假设第一个非选项参数是 HF_TOKEN
+            if [ -z "$HF_TOKEN" ]; then
+                HF_TOKEN="$1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+# 设置工作目录和最终输出目录
 WORK_DIR="$DATA_DIR"
 OUTPUT_DIR="$DATA_DIR/datasets"
+
+# HuggingFace Token (可选)
+HF_TOKEN="${HF_TOKEN:-$HF_TOKEN}"
 
 echo "============================================================"
 echo "Nemotron-Post-Training-Dataset-v2 数据处理流水线"
@@ -30,14 +62,16 @@ echo "============================================================"
 echo "脚本目录: $SCRIPT_DIR"
 echo "项目根目录: $PROJECT_ROOT"
 echo "数据目录: $DATA_DIR"
+if [ -n "$ADD_FORMAT_INSTRUCTION" ]; then
+    echo "格式指令: 启用"
+else
+    echo "格式指令: 禁用 (默认)"
+fi
 echo ""
 
 # 创建数据目录
 mkdir -p "$DATA_DIR"
 mkdir -p "$OUTPUT_DIR"
-
-# HuggingFace Token (可选)
-HF_TOKEN="${1:-$HF_TOKEN}"
 
 # ============================================================
 # Step 1: 下载数据
@@ -73,9 +107,17 @@ echo "[Step 2/3] 解析 boxed 答案，转换为框架格式..."
 if [ -f "$WORK_DIR/stem_processed.jsonl" ]; then
     echo "  stem_processed.jsonl 已存在，跳过处理"
 else
-    python "$SCRIPT_DIR/process.py" \
-        --input "$WORK_DIR/stem.jsonl" \
-        --output "$WORK_DIR/stem_processed.jsonl"
+    if [ -n "$ADD_FORMAT_INSTRUCTION" ]; then
+        echo "  (添加格式指令后缀)"
+        python "$SCRIPT_DIR/process.py" \
+            --input "$WORK_DIR/stem.jsonl" \
+            --output "$WORK_DIR/stem_processed.jsonl" \
+            $ADD_FORMAT_INSTRUCTION
+    else
+        python "$SCRIPT_DIR/process.py" \
+            --input "$WORK_DIR/stem.jsonl" \
+            --output "$WORK_DIR/stem_processed.jsonl"
+    fi
 fi
 
 echo ""

@@ -14,17 +14,21 @@ from .registry import register_verifier
 @register_verifier("mcq-rlvr")
 class MCQRLVRVerifier(BaseVerifier):
     """
-    MCQ verifier using \\boxed{} answer extraction.
+    MCQ verifier using multiple answer extraction strategies.
 
-    Designed for use with R1-style models or models prompted to output
-    answers in \\boxed{} format.
+    Designed for use with various models that output answers in different formats.
+    Supports both LaTeX-style \\boxed{} format and plain text formats.
 
     Supported formats:
         - \\boxed{A}
         - \\boxed{\\text{A}}
         - \\boxed{\\textbf{A}}
         - \\boxed{\\mathrm{A}}
+        - \\boxed{A: option text}
         - $\\boxed{A}$
+        - **Answer: A** (deepseek-r1 style)
+        - **Final Answer: B** (deepseek-r1 style)
+        - "The answer is C" (plain text)
     """
 
     def __init__(self, **kwargs):
@@ -42,6 +46,19 @@ class MCQRLVRVerifier(BaseVerifier):
     # Pattern for LaTeX text commands inside boxed
     LATEX_TEXT_PATTERN = re.compile(
         r"\\(?:text|mathrm|mathbf|textbf)\s*\{\s*([A-Za-z])\s*\}",
+        re.IGNORECASE,
+    )
+
+    # Additional patterns for deepseek-r1 style answers
+    # Matches: **Answer: A**, **Final Answer: B**, etc.
+    BOLD_ANSWER_PATTERN = re.compile(
+        r"\*\*(?:Final\s+)?Answer:\s*([A-Z])\*\*",
+        re.IGNORECASE,
+    )
+
+    # Matches: "The answer is A", "the correct answer is B", etc.
+    PLAIN_ANSWER_PATTERN = re.compile(
+        r"(?:the\s+)?(?:correct\s+)?answer\s+is\s+(?:option\s+)?([A-Z])",
         re.IGNORECASE,
     )
 
@@ -69,10 +86,12 @@ class MCQRLVRVerifier(BaseVerifier):
 
     def extract_answer(self, response: str) -> str | None:
         """
-        Extract answer from \\boxed{} format.
+        Extract answer from various formats.
 
-        Finds all \\boxed{} occurrences and returns the last one
-        (typically the final answer in chain-of-thought responses).
+        Tries multiple extraction strategies in order of preference:
+        1. \\boxed{} format (LaTeX style)
+        2. **Answer: X** format (deepseek-r1 style)
+        3. Plain "the answer is X" format
 
         Supported formats:
             - \\boxed{A}           -> "A"
@@ -80,6 +99,9 @@ class MCQRLVRVerifier(BaseVerifier):
             - \\boxed{\\textbf{B}} -> "B"
             - \\boxed{\\mathrm{C}} -> "C"
             - $\\boxed{D}$         -> "D"
+            - **Answer: E**        -> "E"
+            - **Final Answer: F**  -> "F"
+            - "The answer is G"    -> "G"
 
         Args:
             response: Model's response string
@@ -90,16 +112,32 @@ class MCQRLVRVerifier(BaseVerifier):
         if not response:
             return None
 
-        # Find all \boxed{} matches
+        # Strategy 1: Try \boxed{} format first (most reliable)
         matches = self.BOXED_PATTERN.findall(response)
-        if not matches:
-            return None
+        if matches:
+            # Use the last match (final answer)
+            raw_answer = matches[-1].strip()
+            normalized = self._normalize_answer(raw_answer)
+            if normalized:
+                return normalized
 
-        # Use the last match (final answer)
-        raw_answer = matches[-1].strip()
+        # Strategy 2: Try **Answer: X** format (deepseek-r1 style)
+        matches = self.BOLD_ANSWER_PATTERN.findall(response)
+        if matches:
+            # Use the last match (final answer)
+            answer = matches[-1].strip().upper()
+            if len(answer) == 1 and answer.isalpha():
+                return answer
 
-        # Normalize the answer
-        return self._normalize_answer(raw_answer)
+        # Strategy 3: Try plain "the answer is X" format
+        matches = self.PLAIN_ANSWER_PATTERN.findall(response)
+        if matches:
+            # Use the last match (final answer)
+            answer = matches[-1].strip().upper()
+            if len(answer) == 1 and answer.isalpha():
+                return answer
+
+        return None
 
     def _normalize_answer(self, raw: str) -> str | None:
         """
@@ -109,6 +147,7 @@ class MCQRLVRVerifier(BaseVerifier):
             - Direct letters: "A" -> "A"
             - LaTeX commands: "\\text{A}" -> "A"
             - With whitespace: " A " -> "A"
+            - Option with text: "A: option text" -> "A"
 
         Args:
             raw: Raw content from inside \\boxed{}
@@ -120,6 +159,11 @@ class MCQRLVRVerifier(BaseVerifier):
         latex_match = self.LATEX_TEXT_PATTERN.search(raw)
         if latex_match:
             return latex_match.group(1).upper()
+
+        # Try to match "A: option text" or "A：选项文本" format
+        option_with_text = re.match(r"^([A-Za-z])\s*[:：]", raw.strip())
+        if option_with_text:
+            return option_with_text.group(1).upper()
 
         # Clean and check if it's a single letter
         cleaned = raw.strip().upper()
