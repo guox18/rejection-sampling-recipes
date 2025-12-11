@@ -29,6 +29,9 @@ class MCQRLVRVerifier(BaseVerifier):
         - **Answer: A** (deepseek-r1 style)
         - **Final Answer: B** (deepseek-r1 style)
         - "The answer is C" (plain text)
+
+    Note: This is a rule-based verifier that runs quickly.
+          Uses default sequential batch verification (no concurrency needed).
     """
 
     def __init__(self, **kwargs):

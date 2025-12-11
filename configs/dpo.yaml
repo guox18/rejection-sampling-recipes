@@ -30,6 +30,7 @@ sampler:
 
 verifier:
   type: mcq-rlvr                  # Verifier type: mcq-rlvr | math-rlvr | mcq-llm-as-judge
+  max_concurrent: 50              # Max concurrent requests (mcq-llm-as-judge only)
 
 formatter:
   - type: dpo                     # Formatter type

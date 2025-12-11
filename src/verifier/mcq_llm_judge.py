@@ -5,6 +5,8 @@ Uses an LLM to judge whether the model's answer is correct.
 Clips the thinking process before sending to judge.
 """
 
+from concurrent.futures import ThreadPoolExecutor
+
 from openai import OpenAI
 
 from ..utils.response_processor import clip_thinking
@@ -49,6 +51,8 @@ class MCQLLMJudgeVerifier(BaseVerifier):
 
     Clips the thinking process (e.g., <think>...</think>) before judging.
     More reliable than rule-based extraction for non-R1 models.
+
+    Note: Supports concurrent verification via verify_batch() for better throughput.
     """
 
     def __init__(
@@ -59,6 +63,7 @@ class MCQLLMJudgeVerifier(BaseVerifier):
         temperature: float = 0.0,
         max_tokens: int = 10,
         template: str | None = None,
+        max_concurrent: int = 50,  # New: concurrent requests limit
         **kwargs,  # Accept and ignore unused kwargs for compatibility
     ):
         """
@@ -71,11 +76,13 @@ class MCQLLMJudgeVerifier(BaseVerifier):
             temperature: Sampling temperature (0.0 for deterministic)
             max_tokens: Max tokens for judge response
             template: Custom judge prompt template
+            max_concurrent: Max concurrent requests for batch verification
         """
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.template = template or DEFAULT_JUDGE_TEMPLATE
+        self.max_concurrent = max_concurrent
 
         # Initialize OpenAI client (use dummy API key as default for local APIs)
         import os
@@ -165,3 +172,63 @@ class MCQLLMJudgeVerifier(BaseVerifier):
         else:
             # Unknown format, default to incorrect
             return False
+
+    def verify_batch(self, responses: list[str], metadatas: list[dict]) -> list[float]:
+        """
+        Verify a batch of responses concurrently.
+
+        Uses ThreadPoolExecutor to limit concurrent requests via max_workers.
+
+        Args:
+            responses: List of model response strings
+            metadatas: List of metadata dicts
+
+        Returns:
+            List of scores (floats)
+        """
+        assert len(responses) == len(metadatas), "responses and metadatas must have same length"
+
+        if not responses:
+            return []
+
+        # Use ThreadPoolExecutor for concurrent API calls
+        results = [None] * len(responses)
+
+        def verify_one(idx: int, response: str, metadata: dict) -> None:
+            """Verify a single response and store result."""
+            # Extract ground truth and question
+            gold_target = metadata.get("answer") or metadata.get("gold_target", "")
+            question = metadata.get("question") or metadata.get("origin_question", "")
+
+            # Clip thinking process
+            clipped_response = clip_thinking(response)
+
+            # Build judge prompt
+            prompt = self.template.format(
+                question=question,
+                gold_target=gold_target,
+                predicted_answer=clipped_response,
+            )
+
+            # Call judge model
+            try:
+                judge_output = self._call_judge(prompt)
+                is_correct = self._parse_judge_output(judge_output)
+                results[idx] = 1.0 if is_correct else 0.0
+            except Exception as e:
+                # Log error but continue (fail-safe)
+                print(f"⚠️  LLM Judge error for item {idx}: {e}")
+                results[idx] = 0.0
+
+        # Execute with thread pool (max_workers limits concurrency)
+        with ThreadPoolExecutor(max_workers=self.max_concurrent) as executor:
+            futures = []
+            for idx, (resp, meta) in enumerate(zip(responses, metadatas, strict=False)):
+                future = executor.submit(verify_one, idx, resp, meta)
+                futures.append(future)
+
+            # Wait for all to complete
+            for future in futures:
+                future.result()
+
+        return results

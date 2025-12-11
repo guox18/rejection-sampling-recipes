@@ -5,7 +5,7 @@
 **Reproducible recipes for rejection sampling in synthetic data generation**
 
 [![CI](https://github.com/guox18/rejection-sampling-recipes/actions/workflows/ci.yml/badge.svg)](https://github.com/guox18/rejection-sampling-recipes/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/guox18/rejection-sampling-recipes/branch/main/graph/badge.svg)](https://codecov.io/gh/guox18/rejection-sampling-recipes)
+<!-- [![codecov](https://codecov.io/gh/guox18/rejection-sampling-recipes/branch/main/graph/badge.svg)](https://codecov.io/gh/guox18/rejection-sampling-recipes) -->
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)

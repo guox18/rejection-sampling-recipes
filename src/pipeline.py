@@ -11,8 +11,6 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from tqdm import tqdm
-
 from .formatter import BaseFormatter, get_formatter
 from .preprocessor import DataPreprocessor
 from .sampler import BaseSampler, get_sampler
@@ -224,7 +222,7 @@ class Pipeline:
             sample_elapsed = time.time() - sample_start
             self._sampling_time += sample_elapsed
 
-            # Step 2: Verify and collect (with progress bar)
+            # Step 2: Verify and collect (batch verification)
             # Flatten all (item, response) pairs for verification
             verify_tasks = []
             for item in remaining_items:
@@ -233,22 +231,24 @@ class Pipeline:
                 for resp in responses:
                     verify_tasks.append((item_id, item["metadata"], resp))
 
-            # Verify with progress bar (less verbose)
+            # Batch verify (verifier decides whether to use concurrency)
             verify_start = time.time()
-            for item_id, metadata, resp in tqdm(
-                verify_tasks,
-                desc=f"    Step {step + 1} verifying",
-                leave=False,
-                disable=len(verify_tasks) < 10,  # Hide for small batches
-                mininterval=1.0,  # Update at most once per second
-            ):
-                score = self.verifier.verify(resp, metadata)
-                rollouts_map[item_id].append(
-                    {
-                        "response": resp,
-                        "score": score,
-                    }
-                )
+            if verify_tasks:
+                # Extract responses and metadatas
+                responses_to_verify = [task[2] for task in verify_tasks]
+                metadatas_to_verify = [task[1] for task in verify_tasks]
+
+                # Call batch verification
+                scores = self.verifier.verify_batch(responses_to_verify, metadatas_to_verify)
+
+                # Map results back to rollouts_map
+                for (item_id, _, resp), score in zip(verify_tasks, scores, strict=False):
+                    rollouts_map[item_id].append(
+                        {
+                            "response": resp,
+                            "score": score,
+                        }
+                    )
             verify_elapsed = time.time() - verify_start
             self._verify_time += verify_elapsed
 

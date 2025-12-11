@@ -42,6 +42,7 @@ verifier:
   api_key: null                     # Judge API key (mcq-llm-as-judge only)
   temperature: 0.0                  # Judge temperature (mcq-llm-as-judge only)
   max_tokens: 10                    # Judge max tokens (mcq-llm-as-judge only)
+  max_concurrent: 50                # Max concurrent requests (mcq-llm-as-judge only)
 
 formatter:
   - type: sft                       # Formatter type: sft | multi_sft | dpo
