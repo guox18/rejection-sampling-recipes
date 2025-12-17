@@ -1,5 +1,0 @@
-# vLLM dependencies for rejection-sampling-recipes
-# Install with: pip install -r requirements.txt -r requirements-vllm.txt
-
-vllm>=0.8.5
-ray>=2.9.0

@@ -1,0 +1,13 @@
+# VLLM 模型服务配置示例
+# 用法: bash start_vllm_service.sh --config vllm_config.yaml --router-ip <IP> --router-port <PORT>
+
+qwen3_vl_235b_a22b_thinking:
+  tp: 8                    # 张量并行度
+  dp: 1                    # 数据并行度
+  pp: 1                    # 流水线并行度
+  worker_count: 1          # Worker 数量
+  memory_per_task: 1200    # 每个任务的内存 (MB)
+  cpus_per_task: 32        # 每个任务的 CPU 核心数
+  model_path: "/mnt/shared-storage-user/large-model-center-share-weights/hf_hub/models--Qwen--Qwen3-VL-235B-A22B-Thinking/snapshots/c6a4947308cff8b5dcd126e37d394e8d3f97fac9"
+
+

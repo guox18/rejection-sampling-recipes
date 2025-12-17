@@ -1,0 +1,42 @@
+# SFT Recipe 配置
+#
+# 并发控制说明:
+# 1. Pipeline 级别:
+#    - concurrency: 默认 Stage 的 Actor 数量 (多少个 batch 同时处理)
+#    - sampler_concurrency/verifier_concurrency: 特定 Stage 的 Actor 数量
+#    - batch_size: 每个 batch 的数据量
+#
+# 2. Stage 内部 (异步模式 - SamplerStage):
+#    - semaphore_per_sampler: 单个 Actor 内的并发请求数 (信号量控制)
+#
+# 3. Stage 内部 (多线程模式 - VerifierStage):
+#    - verifier_max_workers: batch 内有多少个 item 并发处理
+
+# 采样配置
+model: qwen
+base_url: http://100.100.157.69:8004/v1
+api_key: dummy
+n_samples: 4
+temperature: 0.7
+max_tokens: 4096
+semaphore_per_sampler: 10
+
+# LLM Judge 配置
+judge_model: qwen
+judge_base_url: http://100.100.157.69:8004/v1
+judge_api_key: dummy
+judge_temperature: 0.0
+judge_max_tokens: 10
+verifier_max_workers: 20  # VerifierStage 线程池大小 (batch 内 item 级别并发)
+
+# 格式化配置
+pass_threshold: 1.0
+
+# 重试配置
+max_retries: 2
+
+# Pipeline 配置
+batch_size: 10  # 每个 batch 的数据量
+concurrency: 2  # 默认并发度(Stage 的 actor 数量)
+sampler_concurrency: 2  # SamplerStage 并发度
+verifier_concurrency: 2  # VerifierStage 并发度

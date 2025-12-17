@@ -1,1 +1,2 @@
-# Tests
+"""Tests for rejection-sampling-recipes."""
+
