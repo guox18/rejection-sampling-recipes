@@ -44,6 +44,7 @@ Your judgment (A or B):"""
 # Response processor: split thinking and final response
 # ============================================================
 
+
 def split_response(raw_response: str) -> tuple[str, str]:
     """
     Split raw response into thinking and final response.
@@ -125,17 +126,18 @@ def clip_thinking(raw_response: str) -> str:
 # OpenAI-compatible API Clients
 # ============================================================
 
+
 class AsyncOpenAIClient:
     """
     异步 OpenAI-compatible API 客户端.
-    
+
     特性:
     - 使用 aiohttp.ClientSession 实现异步调用
     - 内置重试机制
     - Session 在 batch 级别创建和回收
     - 信号量控制单个 session 的并发请求数
     """
-    
+
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -145,7 +147,7 @@ class AsyncOpenAIClient:
     ):
         """
         初始化异步客户端.
-        
+
         Args:
             api_key: API key (如果为 None, 从环境变量读取)
             base_url: API base URL (如果为 None, 使用 OpenAI 默认)
@@ -156,7 +158,7 @@ class AsyncOpenAIClient:
         self.base_url = base_url or "https://api.openai.com/v1"
         self.max_retries = max_retries
         self.semaphore_size = semaphore_size
-    
+
     async def chat_completion(
         self,
         session: aiohttp.ClientSession,
@@ -169,7 +171,7 @@ class AsyncOpenAIClient:
     ) -> list[str]:
         """
         调用 chat completion API.
-        
+
         Args:
             session: aiohttp session (由调用方在 batch 级别创建)
             semaphore: 并发控制信号量 (由调用方创建)
@@ -178,16 +180,18 @@ class AsyncOpenAIClient:
             n: 生成的回复数量
             temperature: 温度参数
             max_tokens: 最大 token 数
-        
+
         Returns:
             生成的回复列表
         """
         async with semaphore:
+            import json as json_module
+
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self.api_key}",
             }
-            
+
             payload = {
                 "model": model,
                 "messages": messages,
@@ -195,39 +199,57 @@ class AsyncOpenAIClient:
                 "temperature": temperature,
                 "max_tokens": max_tokens,
             }
-            
+
+            # 记录请求大小（用于调试）
+            payload_size = len(json_module.dumps(payload))
+            if payload_size > 1_000_000:  # > 1MB
+                print(f"[AsyncOpenAIClient] Large payload: {payload_size / 1_000_000:.2f} MB")
+
             url = f"{self.base_url}/chat/completions"
-            
+
             # 重试逻辑
             for attempt in range(self.max_retries):
                 try:
                     async with session.post(url, json=payload, headers=headers) as resp:
                         if resp.status == 200:
-                            data = await resp.json()
-                            return [choice["message"]["content"] for choice in data["choices"]]
+                            # 检查响应的 Content-Type
+                            content_type = resp.headers.get("Content-Type", "")
+
+                            # 尝试解析 JSON，处理错误的 Content-Type
+                            try:
+                                data = await resp.json(content_type=None)  # 忽略 Content-Type 检查
+                                return [choice["message"]["content"] for choice in data["choices"]]
+                            except (ValueError, KeyError, aiohttp.ContentTypeError) as e:
+                                # 获取原始响应文本用于调试
+                                error_text = await resp.text()
+                                raise RuntimeError(
+                                    f"Failed to parse API response. "
+                                    f"Content-Type: {content_type}, "
+                                    f"Response preview: {error_text[:500]}"
+                                )
                         else:
                             error_text = await resp.text()
                             if attempt == self.max_retries - 1:
                                 raise RuntimeError(f"API error {resp.status}: {error_text}")
-                            await asyncio.sleep(2 ** attempt)
+                            await asyncio.sleep(2**attempt)
                 except aiohttp.ClientError as e:
                     if attempt == self.max_retries - 1:
                         raise
-                    await asyncio.sleep(2 ** attempt)
-            
+                    await asyncio.sleep(2**attempt)
+
             return []
 
 
 class SyncOpenAIClient:
     """
     同步 OpenAI API 客户端.
-    
+
     特性:
     - 使用 openai SDK 实现同步调用
     - 适合多线程模式
     - 封装初始化逻辑
     """
-    
+
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -235,7 +257,7 @@ class SyncOpenAIClient:
     ):
         """
         初始化同步客户端.
-        
+
         Args:
             api_key: API key (如果为 None, 从环境变量读取)
             base_url: API base URL (如果为 None, 使用 OpenAI 默认)
@@ -243,7 +265,7 @@ class SyncOpenAIClient:
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY") or "dummy"
         self.base_url = base_url
         self._client = None
-    
+
     def initialize(self):
         """初始化 OpenAI client (在 Actor 的 initialize() 中调用)."""
         if self._client is None:
@@ -251,9 +273,9 @@ class SyncOpenAIClient:
                 from openai import OpenAI
             except ImportError:
                 raise ImportError("pip install openai")
-            
+
             self._client = OpenAI(base_url=self.base_url, api_key=self.api_key)
-    
+
     def chat_completion(
         self,
         messages: list[dict],
@@ -263,19 +285,19 @@ class SyncOpenAIClient:
     ) -> str:
         """
         调用 chat completion API.
-        
+
         Args:
             messages: 对话消息列表
             model: 模型名称
             temperature: 温度参数
             max_tokens: 最大 token 数
-        
+
         Returns:
             生成的回复内容
         """
         if self._client is None:
             raise RuntimeError("Client not initialized. Call initialize() first.")
-        
+
         response = self._client.chat.completions.create(
             model=model,
             messages=messages,
@@ -283,4 +305,3 @@ class SyncOpenAIClient:
             temperature=temperature,
         )
         return response.choices[0].message.content or ""
-

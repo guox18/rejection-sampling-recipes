@@ -1,15 +1,5 @@
 #!/bin/bash
-#
-# SFT Recipe 执行脚本
-#
-# 功能:
-#   - 支持处理多个输入文件（复用同一个 Ray session）
-#   - 自动生成输出路径（保留输入文件名）
-#
-# 使用方式:
-#   bash run.sh
-#
-
+# SFT Recipe 执行脚本, 使用方式: bash run.sh
 
 set -e
 
@@ -20,21 +10,26 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 # 配置项 - 在此处修改参数
 # ============================================================
 # 配置文件路径
-CONFIG_FILE="${PROJECT_ROOT}/recipes/sft/config.yaml"
+CONFIG_FILE="${SCRIPT_DIR}/../config.yaml"
 
 # 输入文件路径（支持多个文件，用空格分隔）
 INPUT_FILES=(
-    "${PROJECT_ROOT}/data/Nemotron-Post-Training-Dataset-v2/datasets/train_30.jsonl"
-    "${PROJECT_ROOT}/data/Nemotron-Post-Training-Dataset-v2/datasets/train_5.jsonl"
+    "${PROJECT_ROOT}/tests/mock/text.jsonl" # 纯文本
+    "${PROJECT_ROOT}/tests/mock/text-pic.jsonl"  # 多模
 )
 
-# 输出目录（自动创建 sft/YYYYMMDD_HHMMSS 格式的目录，用户也可以手动指定）
+# 输出目录（自动创建 sft/YYYYMMDD_HHMMSS 格式的目录，用户也可以手动指定）. 不指定路径的话, 会自动在 数据文件路径下创建子目录, 然后保存数据. 
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+
+# 固定输出目录, 用于断点续传.
 # TIMESTAMP="20251217_120458"
-OUTPUT_DIR="${PROJECT_ROOT}/data/Nemotron-Post-Training-Dataset-v2/datasets/more_sft/${TIMESTAMP}"
+# OUTPUT_DIR="${PROJECT_ROOT}/data/Nemotron-Post-Training-Dataset-v2/datasets/more_sft/${TIMESTAMP}"
+LATEST="--latest"                  # 设置为 "--latest" 从最新时间戳目录续传
 
 # 输出文件后缀
 OUTPUT_SUFFIX="_sft"
+
+# =========================== 以下是可选配置 ============================
 
 # Pipeline 配置
 BATCH_SIZE=""              # 留空使用配置文件默认值
@@ -46,7 +41,7 @@ VERIFIER_CONCURRENCY=""    # 留空使用配置文件默认值
 NO_RESUME=""               # 设置为 "--no-resume" 禁用断点续传
 NO_PRESERVE_ORDER=""       # 设置为 "--no-preserve-order" 禁用顺序保持
 
-# =========================== 以上为配置项 ============================
+# ================ 之后是环境设置, 通常无需修改 =========================
 
 # 激活虚拟环境(确保 Ray worker 使用正确的 Python)
 source "$PROJECT_ROOT/.venv/bin/activate"
@@ -74,14 +69,14 @@ get_master_address() {
 
 # 启动 Ray head 节点
 start_ray_head() {
-    echo "[INFO] 停止已有的 Ray 进程..."
-    ray stop --force 2>/dev/null || true
+    # echo "[INFO] 停止已有的 Ray 进程..."
+    # ray stop --force 2>/dev/null || true
     
-    echo "[INFO] 启动 Ray head 节点..."
-    ray start --head \
-        --port ${MASTER_PORT} \
-        --system-config='{"enable_metrics_collection":false,"metrics_report_interval_ms":0}' \
-        --disable-usage-stats
+    # echo "[INFO] 启动 Ray head 节点..."
+    # ray start --head \
+    #     --port ${MASTER_PORT} \
+    #     --system-config='{"enable_metrics_collection":false,"metrics_report_interval_ms":0}' \
+    #     --disable-usage-stats
     
     if [ $? -ne 0 ]; then
         echo "[ERROR] 启动 Ray head 节点失败"
@@ -133,6 +128,7 @@ run_pipeline() {
     [ -n "$VERIFIER_CONCURRENCY" ] && args+=(--verifier-concurrency "$VERIFIER_CONCURRENCY")
     
     # 添加其他选项
+    [ -n "$LATEST" ] && args+=("$LATEST")
     [ -n "$NO_RESUME" ] && args+=("$NO_RESUME")
     [ -n "$NO_PRESERVE_ORDER" ] && args+=("$NO_PRESERVE_ORDER")
     

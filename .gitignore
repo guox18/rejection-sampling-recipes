@@ -51,8 +51,14 @@ htmlcov/
 output/
 outputs/
 checkpoints/
+# 先不放实际管线
+recipes/vl_cot_sft_plus 
+# 先不放启服务节点
+scripts/launch_serve
 *.jsonl
 !examples/*.jsonl
+!tests/mock/text.jsonl
+!tests/mock/text-pic.jsonl
 examples/nemotron-post-training-dataset-v2/run_vllm_offline.sh
 
 # OS

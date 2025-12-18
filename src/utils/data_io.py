@@ -11,10 +11,10 @@ import pandas as pd
 def iter_jsonl(path: str) -> Iterator[dict]:
     """
     流式读取 jsonl 文件.
-    
+
     Args:
         path: 文件路径
-        
+
     Yields:
         每行解析后的 dict
     """
@@ -27,7 +27,7 @@ def iter_jsonl(path: str) -> Iterator[dict]:
 def write_jsonl(path: str, items: list[dict], append: bool = False):
     """
     写入 jsonl 文件.
-    
+
     Args:
         path: 文件路径
         items: 要写入的数据列表
@@ -43,16 +43,16 @@ def write_jsonl(path: str, items: list[dict], append: bool = False):
 def convert_to_python_types(obj: Any) -> Any:
     """
     递归转换 numpy/pandas 类型为 Python 原生类型.
-    
-    用于解决 Ray Data 使用 pandas 格式时, 某些值会变成 numpy 类型, 
-    导致 JSON 序列化失败的问题. 
-    
+
+    用于解决 Ray Data 使用 pandas 格式时, 某些值会变成 numpy 类型,
+    导致 JSON 序列化失败的问题.
+
     Args:
         obj: 要转换的对象(可以是任意类型)
-        
+
     Returns:
         转换后的 Python 原生类型对象
-        
+
     Examples:
         >>> import numpy as np
         >>> convert_to_python_types(np.int64(42))
@@ -81,16 +81,16 @@ def convert_to_python_types(obj: Any) -> Any:
 def convert_scalar_to_python(obj: Any) -> Any:
     """
     转换单个标量值为 Python 原生类型.
-    
-    用于比较操作(如集合成员检查)时, 确保类型一致. 
-    比 convert_to_python_types 更轻量, 不递归处理容器类型. 
-    
+
+    用于比较操作(如集合成员检查)时, 确保类型一致.
+    比 convert_to_python_types 更轻量, 不递归处理容器类型.
+
     Args:
         obj: 要转换的标量值
-        
+
     Returns:
         转换后的 Python 原生类型
-        
+
     Examples:
         >>> import numpy as np
         >>> convert_scalar_to_python(np.int64(42))
@@ -109,4 +109,3 @@ def convert_scalar_to_python(obj: Any) -> Any:
         return None
     else:
         return obj
-
