@@ -39,9 +39,8 @@ os.environ.setdefault("PYTHONWARNINGS", "ignore")  # 屏蔽 Python 警告
 import argparse
 import sys
 
-# 添加项目根目录到路径
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-sys.path.insert(0, PROJECT_ROOT)
+# 使用相对引用，python -m 启动时工作目录已在项目根目录
+PROJECT_ROOT = os.getcwd()
 
 # 动态导入当前 recipe 的模块（方便复制目录）
 from importlib import import_module
@@ -59,7 +58,19 @@ def parse_args() -> argparse.Namespace:
         description="SFT Recipe: 采样 → 验证 → 格式化",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="采样模型名",
+    )
     
+    parser.add_argument(
+        "--judge-model",
+        type=str,
+        default=None,
+        help="judge 模型名",
+    )
     # 数据路径
     parser.add_argument(
         "--input", "-i",

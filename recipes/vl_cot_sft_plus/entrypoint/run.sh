@@ -26,7 +26,8 @@ mkdir -p $(dirname $RECIPE_LOG_FILE)
 # 配置项 - 在此处修改参数
 # ============================================================
 # 日志文件路径, 写到 tmp
-
+MODEL="qwen3_vl_235b_a22b_thinking" # 使用 vllm 启动的模型, 模型名应准确
+JUDGE_MODEL="qwen"
 # 配置文件路径
 CONFIG_FILE="${RECIPE_DIR}/config.yaml"
 
@@ -36,17 +37,17 @@ INPUT_FILES=(
     # "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Science_MCQ~en~scienceqa_multi_choice_en_20240402~1.0.0~0.0/jsonl/part-68d4c4a0aff3-000086_abs.jsonl"
     # "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Science_MCQ~en~scienceqa_choice_aug_en_20240402~1.0.0~0.0/jsonl/part-68d4c44d1ad9-000086_abs.jsonl"
 
-    "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Knowledge_ShortQA~en~viquae_en_20240402~1.0.0~0.0/jsonl/part-68d4c539ae1e-000086_abs.jsonl"
-    "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Knowledge_MCQ~en~koniq10k_en_20240403~1.0.0~0.0/jsonl/part-68d4c584252f-000086_abs.jsonl"
-    "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_General_MCQ~en~ccbench_inhouse_part1_zh_20240401~1.0.0~0.0/jsonl/part-68d4b8afcdba-000086_abs.jsonl"
-    "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~en~scienceqa_choice_augment_en_20240402~1.0.0~0.0/jsonl/part-68d677b6f47f-000086_abs.jsonl"
+    # "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Knowledge_ShortQA~en~viquae_en_20240402~1.0.0~0.0/jsonl/part-68d4c539ae1e-000086_abs.jsonl"
+    # "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Knowledge_MCQ~en~koniq10k_en_20240403~1.0.0~0.0/jsonl/part-68d4c584252f-000086_abs.jsonl"
+    # "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_General_MCQ~en~ccbench_inhouse_part1_zh_20240401~1.0.0~0.0/jsonl/part-68d4b8afcdba-000086_abs.jsonl"
+    # "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~en~scienceqa_choice_augment_en_20240402~1.0.0~0.0/jsonl/part-68d677b6f47f-000086_abs.jsonl"
 
     ## debug
     # "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Knowledge_ShortQA~en~viquae_en_20240402~1.0.0~0.0/jsonl/test.jsonl"
 )
 
 # 输出目录（自动创建 sft/YYYYMMDD_HHMMSS 格式的目录，用户也可以手动指定）
-TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+# TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 # TIMESTAMP="20251217_120458"
 # OUTPUT_DIR="${PROJECT_ROOT}/data/Nemotron-Post-Training-Dataset-v2/datasets/more_sft/${TIMESTAMP}"
 
@@ -138,6 +139,11 @@ run_pipeline() {
         args+=(--input "${INPUT_FILES[@]}")
     fi
     
+
+    # 模型名字
+    [ -n "$MODEL" ] && args+=(--model "$MODEL")
+    [ -n "$JUDGE_MODEL" ] && args+=(--judge-model "$JUDGE_MODEL")
+
     # 添加输出目录
     [ -n "$OUTPUT_DIR" ] && args+=(--output-dir "$OUTPUT_DIR")
     [ -n "$OUTPUT_SUFFIX" ] && args+=(--output-suffix "$OUTPUT_SUFFIX")
@@ -157,7 +163,7 @@ run_pipeline() {
     [ -n "$NO_RESUME" ] && args+=("$NO_RESUME")
     [ -n "$NO_PRESERVE_ORDER" ] && args+=("$NO_PRESERVE_ORDER")
     
-    python "$SCRIPT_DIR/run.py" "${args[@]}"
+    python -m recipes.vl_cot_sft_plus.entrypoint.run "${args[@]}"
 }
 
 # 主函数

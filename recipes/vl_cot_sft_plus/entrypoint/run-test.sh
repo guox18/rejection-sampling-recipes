@@ -13,8 +13,10 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 RECIPE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 RECIPE_NAME="$(basename "$RECIPE_DIR")"
+
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 export RECIPE_LOG_FILE="/tmp/logs/${RECIPE_NAME}_run_$(date +"%Y%m%d_%H%M%S").log"
@@ -23,7 +25,9 @@ mkdir -p $(dirname $RECIPE_LOG_FILE)
 # ============================================================
 # 配置项 - 在此处修改参数
 # ============================================================
-
+# 日志文件路径, 写到 tmp
+MODEL="qwen3_vl_235b_a22b_thinking" # 使用 vllm 启动的模型, 模型名应准确
+JUDGE_MODEL="qwen"
 # 配置文件路径
 CONFIG_FILE="${RECIPE_DIR}/config.yaml"
 
@@ -34,7 +38,7 @@ INPUT_FILES=(
 )
 
 # 输出目录（自动创建 sft/YYYYMMDD_HHMMSS 格式的目录，用户也可以手动指定）
-TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+# TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 # TIMESTAMP="20251217_120458"
 # OUTPUT_DIR="${PROJECT_ROOT}/data/Nemotron-Post-Training-Dataset-v2/datasets/more_sft/${TIMESTAMP}"
 
@@ -145,7 +149,7 @@ run_pipeline() {
     [ -n "$NO_RESUME" ] && args+=("$NO_RESUME")
     [ -n "$NO_PRESERVE_ORDER" ] && args+=("$NO_PRESERVE_ORDER")
     
-    python "$SCRIPT_DIR/run.py" "${args[@]}"
+    python -m recipes.vl_cot_sft_plus.entrypoint.run "${args[@]}"
 }
 
 # 主函数
