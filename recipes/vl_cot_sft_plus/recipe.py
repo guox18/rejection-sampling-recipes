@@ -28,12 +28,16 @@ Stage 支持两种实现方式:
 """
 
 import asyncio
+import base64
+from io import BytesIO
 import logging
 import os
 
 import aiohttp
+from PIL import Image
 
 from src.base import BaseRecipe, Stage
+from src.utils.qwen3_vl_util import smart_resize, SPATIAL_MERGE_SIZE, IMAGE_MAX_TOKEN_NUM
 
 from .config import SFTConfig
 from .tools import AsyncOpenAIClient, SyncOpenAIClient, DEFAULT_JUDGE_TEMPLATE, clip_thinking
@@ -64,6 +68,100 @@ def _setup_recipe_logger():
     return logger
 
 logger = _setup_recipe_logger()
+
+
+def resize_messages_images(messages: list[dict], max_pixels: int = None) -> list[dict]:
+    """
+    对 messages 中的所有图片进行 resize 操作.
+    
+    Args:
+        messages: 对话消息列表
+        max_pixels: 最大像素数（默认使用 IMAGE_MAX_TOKEN_NUM * factor^2）
+        
+    Returns:
+        处理后的 messages（原地修改并返回）
+    """
+    # 计算默认 max_pixels
+    patch_factor = int(14 * SPATIAL_MERGE_SIZE)
+    if max_pixels is None:
+        max_pixels = IMAGE_MAX_TOKEN_NUM * patch_factor ** 2
+    import copy
+    
+    def to_rgb(image: Image.Image) -> Image.Image:
+        """转换图片为 RGB 格式"""
+        if image.mode == "RGB":
+            return image
+        image = image.convert("RGBA")
+        background = Image.new("RGBA", image.size, (255, 255, 255))
+        background.paste(image, mask=image.split()[3])
+        return background.convert("RGB")
+    
+    def process_base64_image(base64_str: str, max_pixels: int, patch_factor: int) -> str:
+        """处理 base64 编码的图片"""
+        try:
+            # 解析 base64 字符串
+            if "base64," in base64_str:
+                header, base64_data = base64_str.split("base64,", 1)
+            else:
+                return base64_str  # 不是 base64 格式，跳过
+            
+            # 解码图片
+            data = base64.b64decode(base64_data)
+            with BytesIO(data) as bio:
+                image_obj = copy.deepcopy(Image.open(bio))
+            
+            # 转换为 RGB
+            image = to_rgb(image_obj)
+            width, height = image.size
+            
+            # 计算新的尺寸
+            resized_height, resized_width = smart_resize(
+                height,
+                width,
+                factor=patch_factor,
+                min_pixels=28 * patch_factor ** 2,
+                max_pixels=max_pixels,
+            )
+            
+            # Resize 图片
+            resized_image = image.resize((resized_width, resized_height))
+            
+            # 重新编码为 base64
+            buffer = BytesIO()
+            resized_image.save(buffer, format="PNG")
+            new_base64_data = base64.b64encode(buffer.getvalue()).decode()
+            
+            return f"{header}base64,{new_base64_data}"
+        except Exception as e:
+            logger.warning(f"Failed to resize image: {e}, keeping original")
+            return base64_str
+    
+    # 遍历 messages 并处理图片
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+            
+        content = message.get("content")
+        if not content:
+            continue
+        
+        # 如果 content 是列表（多模态消息）
+        if isinstance(content, list):
+            for item in content:
+                if not isinstance(item, dict):
+                    continue
+                
+                # 检查是否是图片
+                if item.get("type") == "image_url":
+                    image_url = item.get("image_url", {})
+                    if isinstance(image_url, dict):
+                        url = image_url.get("url", "")
+                        if url.startswith("data:image") and "base64," in url:
+                            # 处理 base64 图片
+                            new_url = process_base64_image(url, max_pixels, patch_factor)
+                            image_url["url"] = new_url
+    
+    return messages
 
 
 class DataConverterStage(Stage):
@@ -355,19 +453,10 @@ class DataConverterStage(Stage):
         
         return result
 
-# ============================================================
-# 示例 1: 异步模式 - 使用装饰器 (推荐)
-# ============================================================
-
-@Stage.async_mode
+# 自行实现
 class SamplerStage(Stage):
     """
     采样阶段: 为每个 item 生成 n 个 responses.
-    
-    模式: 异步模式 (@Stage.async_mode)
-    - 覆盖 process() 方法，在 batch 级别管理 session
-    - Session 和 semaphore 在每个 batch 创建，处理完后关闭
-    - 避免事件循环不一致问题，代码更简洁
     """
     
     def __init__(self, config: SFTConfig):
@@ -415,10 +504,39 @@ class SamplerStage(Stage):
                     return {**item, "responses": responses}
                 except Exception as e:
                     import traceback
-                    error_trace = traceback.format_exc()
-                    item_id = item.get('id', 'unknown')
-                    logger.error(f"[SamplerStage] ❌ Item {item_id} failed: {e}\n{error_trace}")
-                    return {**item, "_failed": True, "_error": f"SamplerStage: {e}", "_traceback": error_trace}
+                    
+                    # 检查是否是 413 错误（请求体过长）
+                    error_str = str(e)
+                    if "413" in error_str and "length limit exceeded" in error_str:
+                        logger.warning(f"[SamplerStage] Item {item_id}: 413 error, resizing images and retrying...")
+                        try:
+                            # 对图片进行 resize
+                            resized_messages = resize_messages_images(messages)
+                            
+                            # 重试一次
+                            responses = await self.client.chat_completion(
+                                session=session,
+                                semaphore=semaphore,
+                                messages=resized_messages,
+                                model=self.config.model,
+                                n=self.config.n_samples,
+                                temperature=self.config.temperature,
+                                max_tokens=self.config.max_tokens,
+                            )
+                            logger.info(f"[SamplerStage] Item {item_id}: Retry successful after resizing, generated {len(responses)} responses")
+                            
+                            # 更新 item 中的 messages 为 resized 版本
+                            return {**item, "messages": resized_messages, "responses": responses}
+                        except Exception as retry_e:
+                            # 重试失败，记录完整的 traceback
+                            error_trace = traceback.format_exc()
+                            logger.error(f"[SamplerStage] ❌ Item {item_id} retry failed: {retry_e}\n{error_trace}")
+                            return {**item, "_failed": True, "_error": f"SamplerStage retry: {retry_e}", "_traceback": error_trace}
+                    else:
+                        # 其他错误，记录完整的 traceback
+                        error_trace = traceback.format_exc()
+                        logger.error(f"[SamplerStage] ❌ Item {item_id} failed: {e}\n{error_trace}")
+                        return {**item, "_failed": True, "_error": f"SamplerStage: {e}", "_traceback": error_trace}
             
             return await asyncio.gather(*[process_one(item) for item in batch])
 
