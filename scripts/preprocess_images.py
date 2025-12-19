@@ -59,12 +59,14 @@ def infer_image_base_path_from_doc_loc(doc_loc: str, image_base_dir: str) -> Opt
     # 格式: P~xxx~xxx~xxx~x.x.x~x.x
     pattern = r"(P~[^/]+?~\d+\.\d+\.\d+~\d+\.\d+)(?:_[^/]+)?/jsonl/"
     match = re.search(pattern, doc_loc)
-
+    print(f"match: {match}")
+    print(f"doc_loc: {doc_loc}")
     if not match:
         return None
 
     dataset_name = match.group(1)
     image_path = os.path.join(image_base_dir, dataset_name, "multimodal_elements")
+
 
     return image_path
 

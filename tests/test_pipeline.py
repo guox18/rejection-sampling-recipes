@@ -292,7 +292,7 @@ class TestPipelineRun:
             output_data = [json.loads(line) for line in f]
 
         # 只有 2 条成功的
-        successful = [item for item in output_data if not item.get("_failed")]
+        successful = [item for item in output_data if item.get("_failed") is False]
         assert len(successful) == 2
 
 

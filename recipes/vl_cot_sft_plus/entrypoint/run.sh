@@ -13,9 +13,13 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+RECIPE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+RECIPE_NAME="$(basename "$RECIPE_DIR")"
+
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
-export RECIPE_LOG_FILE="/tmp/logs/vl_cot_sft_plus_run_$(date +"%Y%m%d_%H%M%S").log"
+export RECIPE_LOG_FILE="/tmp/logs/${RECIPE_NAME}_run_$(date +"%Y%m%d_%H%M%S").log"
 mkdir -p $(dirname $RECIPE_LOG_FILE)
 
 # ============================================================
@@ -24,7 +28,7 @@ mkdir -p $(dirname $RECIPE_LOG_FILE)
 # 日志文件路径, 写到 tmp
 
 # 配置文件路径
-CONFIG_FILE="${PROJECT_ROOT}/recipes/vl_cot_sft_plus/config.yaml"
+CONFIG_FILE="${RECIPE_DIR}/config.yaml"
 
 # 输入文件路径（支持多个文件，用空格分隔）
 INPUT_FILES=(
@@ -48,7 +52,8 @@ TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 
 LATEST="--latest"                  # 设置为 "--latest" 从最新时间戳目录续传
 # 输出文件后缀
-OUTPUT_SUFFIX="_sft"
+OUTPUT_SUFFIX="_sft-235b"
+SFT_SUBDIR="sft-235b"              # SFT 输出子目录名称，默认为 "sft"
 
 # Pipeline 配置
 BATCH_SIZE=""              # 留空使用配置文件默认值
@@ -136,6 +141,7 @@ run_pipeline() {
     # 添加输出目录
     [ -n "$OUTPUT_DIR" ] && args+=(--output-dir "$OUTPUT_DIR")
     [ -n "$OUTPUT_SUFFIX" ] && args+=(--output-suffix "$OUTPUT_SUFFIX")
+    [ -n "$SFT_SUBDIR" ] && args+=(--sft-subdir "$SFT_SUBDIR")
     
     # 添加配置文件
     [ -n "$CONFIG_FILE" ] && args+=(--config "$CONFIG_FILE")

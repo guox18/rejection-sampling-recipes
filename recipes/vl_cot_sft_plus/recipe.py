@@ -414,21 +414,31 @@ class DataConverterStage(Stage):
         """
         # 1. 获取图片绝对路径（从配置的字段读取）
         image_base_path = self._get_nested_value(item, self.abs_image_path_field)
-        
-        # 2. 初始化结果
+        # 如果未使用 ground_truth, 则说明已经产生有效的输出.
+        if item.get("metadata", {}).get("used_ground_truth") is False:
+            return item
+
         result = {
             "id": item.get("id", "unknown"),
             "messages": [],
-            "metadata": {}
+            "metadata": {},
         }
+        if item.get("abs_path") is not None:
+            result["abs_path"] = item.get("abs_path")
         
         # 3. 提取 assistant 的回答到 metadata
-        for msg in item.get("messages", []):
-            if msg.get("role") == "assistant":
-                answer = msg.get("content", "")
-                if answer:
-                    result["metadata"]["answer"] = answer
-                break
+        # 如果 metadata 中已经有 answer，优先使用已有的
+        existing_answer = item.get("metadata", {}).get("answer")
+        if existing_answer:
+            result["metadata"]["answer"] = existing_answer
+        else:
+            # 否则从 messages 中提取
+            for msg in item.get("messages", []):
+                if msg.get("role") == "assistant":
+                    answer = msg.get("content", "")
+                    if answer:
+                        result["metadata"]["answer"] = answer
+                    break
         
         # 4. 处理 user 消息，收集图像路径和相对路径
         all_image_paths = []
@@ -482,7 +492,12 @@ class SamplerStage(Stage):
             
             # 并发处理 batch 内的所有 items
             async def process_one(item: dict) -> dict:
-                if item.get("_failed"):
+                # 如果已经失败，直接返回
+                if item.get("_failed") is True:
+                    return item
+                
+                # 如果已经产生有效输出 (ground truth 为 False)，直接返回
+                if item.get("metadata", {}).get("used_ground_truth") is False:
                     return item
                 
                 try:
@@ -585,6 +600,9 @@ class VerifierStage(Stage):
         - 失败的 item 会被框架自动跳过, 不会进入 process_item 方法
         - 无需手动 try-catch
         """
+        # 如果未使用 ground_truth, 则说明已经产生有效的输出.
+        if item.get("metadata", {}).get("used_ground_truth") is False:
+            return item
         
         responses = item.get("responses", [])
         metadata = item.get("metadata", {})
@@ -794,6 +812,11 @@ class FormatterStage(Stage):
         """
         处理单个 item, 格式化为 SFT 训练数据.
         """
+        # 如果未使用 ground_truth, 则说明已经产生有效的输出.
+        if item.get("metadata", {}).get("used_ground_truth") is False:
+            logger.info(f"[FormatterStage] Item {item.get('id', 'unknown')}: Already has valid output, skipping")
+            return item
+        
         messages = item.get("messages", [])
         rollouts = item.get("rollouts") or []
         metadata = item.get("metadata", {})
@@ -846,9 +869,19 @@ class FormatterStage(Stage):
             "messages": sft_messages,
             "metadata": clean_metadata,
         }
-        
-        return result
 
+        # 输出前确保 id / messages / metadata 按顺序排列
+        ordered_result = {
+            "id": result["id"],
+            "messages": result["messages"],
+            "metadata": result["metadata"],
+        }
+        # 添加其他字段（除了已经包含的 id, messages, metadata）
+        for key in result:
+            if key not in ["id", "messages", "metadata"]:
+                ordered_result[key] = result[key]
+        result = ordered_result
+        return result
 
 # ============================================================
 # Recipe 定义
@@ -882,328 +915,3 @@ class SFTRecipe(BaseRecipe):
             VerifierStage(self.config),
             FormatterStage(self.config),
         ]
-
-if __name__ == "__main__":
-    import json
-    
-    config = SFTConfig.from_yaml("recipes/vl_cot_sft_plus/config.yaml")
-    data_converter_stage = DataConverterStage(config)
-    
-    # 原有的单元测试用例
-    test_cases = [
-        {
-            "id": 12583,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": "train/14311/image.png",
-                                "image_wh": [750, 429]
-                            }
-                        },
-                        {
-                            "type": "text",
-                            "text": "<IMG_CONTEXT>\nThe following are multi-choice questions. Please give the correct answer directly.\n\nQuestion: What is the capital of Oregon?\nA. Salem\nB. Cheyenne\nC. Arlington\nD. Portland\nAnswer: "
-                        }
-                    ]
-                },
-                {
-                    "role": "assistant",
-                    "content": "A. Salem"
-                }
-            ],
-            "doc_loc": "s3://puyu3-users/shuffle_n_merge/P~Single_Image_Science_MCQ~en~scienceqa_multi_choice_en_20240402~1.0.0~0.0_Bo1MSIrxaL3Qo0DmpKiO/jsonl/part-68d4c4a0aff3-000086.jsonl?bytes=0,599"
-        },
-        {
-            "id": 10282,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": "train/6260/image.png",
-                                "image_wh": [705, 411]
-                            }
-                        },
-                        {
-                            "type": "text",
-                            "text": "<IMG_CONTEXT>\nWhich of these continents does the prime meridian intersect?\nA. Europe\nB. North America\nC. South America\nAnswer with the option's letter from the given choices directly."
-                        }
-                    ]
-                },
-                {
-                    "role": "assistant",
-                    "content": "A"
-                }
-            ],
-            "doc_loc": "s3://puyu3-users/shuffle_n_merge/P~Single_Image_Science_MCQ~en~scienceqa_choice_aug_en_20240402~1.0.0~0.0_Bo1MQrDxaL3Qn0wQWGSV/jsonl/part-68d4c44d1ad9-000086.jsonl?bytes=0,576"
-        },
-        {
-            "id": 1857,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": "viquae/images/512px-Interior_of_Stratford_Market_Depot_on_the_Jubilee_Line.jpg",
-                                "image_wh": [512, 335]
-                            }
-                        },
-                        {
-                            "type": "text",
-                            "text": "<IMG_CONTEXT>\nOn the map what is the colour of this rapid transit railway line?\nAnswer the question using a single word or phrase."
-                        }
-                    ]
-                },
-                {
-                    "role": "assistant",
-                    "content": "Silver"
-                }
-            ],
-            "doc_loc": "s3://puyu3-users/shuffle_n_merge/P~Single_Image_Knowledge_ShortQA~en~viquae_en_20240402~1.0.0~0.0_Bo1MUdXxaL3QqddxTNhR/jsonl/part-68d4c539ae1e-000086.jsonl?bytes=0,574"
-        },
-        {
-            "id": 5398,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": "ToMME/brightness/4_8429194888_8468743988_9471314459_9200093125.jpg",
-                                "image_wh": [1024, 768]
-                            }
-                        },
-                        {
-                            "type": "text",
-                            "text": "<IMG_CONTEXT>\nWhich image is the brightest one?\nA. upper left\nB. upper right\nC. down left\nD. down right\nAnswer with the option's letter from the given choices directly."
-                        }
-                    ]
-                },
-                {
-                    "role": "assistant",
-                    "content": "C"
-                }
-            ],
-            "doc_loc": "s3://puyu3-users/shuffle_n_merge/P~Single_Image_Knowledge_MCQ~en~koniq10k_en_20240403~1.0.0~0.0_Bo1MVrXxaL3QrL7MvSJY/jsonl/part-68d4c584252f-000086.jsonl?bytes=0,598"
-        },
-        {
-            "id": -1,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": "liangjinwei/traditional_show/dance/google_22/000085_1273e2b6.png",
-                                "image_wh": [657, 371]
-                            }
-                        },
-                        {
-                            "type": "text",
-                            "text": "<IMG_CONTEXT>\n图中所示传统舞蹈表演为？\nA. 基诺大鼓舞\nB. 木鼓舞\nC. 翼城花鼓\nD. 京西太平鼓\n请回答选项字母以及对应的选项内容。"
-                        }
-                    ]
-                },
-                {
-                    "role": "assistant",
-                    "content": "B. 木鼓舞"
-                }
-            ],
-            "doc_loc": "s3://puyu3-users/shuffle_n_merge/P~Single_Image_General_MCQ~en~ccbench_inhouse_part1_zh_20240401~1.0.0~0.0_Bo1LiVvxaL3QRY2rOLhO/jsonl/part-68d4b8afcdba-000086.jsonl?bytes=0,616"
-        },
-        {
-            "id": 33867,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": "Read the description of a trait.\nDamon is good at identifying fish.\n\nWhat information supports the conclusion that Damon acquired this trait?\nA. Damon was not born knowing how to identify different fish. He had to learn this skill.\nB. Damon has two pet fish. The fish live in a fish tank together.\nAnswer with the option's letter from the given choices directly."
-                },
-                {
-                    "role": "assistant",
-                    "content": "A"
-                }
-            ],
-            "doc_loc": "s3://puyu3-users/shuffle_n_merge/P~other~en~scienceqa_choice_augment_en_20240402~1.0.0~0.0_Bo1neffxaL3Q-y61IMdv/jsonl/part-68d677b6f47f-000086.jsonl?bytes=0,631"
-        },
-        {
-            "id": -1,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": "lishu/image_9_157_raxbrbiushuvcgldqslg.jpg",
-                                "image_wh": [1000, 1000]
-                            }
-                        },
-                        {
-                            "type": "text",
-                            "text": "<IMG_CONTEXT>\n请问这张图展示的是哪种书法体？"
-                        }
-                    ]
-                },
-                {
-                    "role": "assistant",
-                    "content": "隶书"
-                }
-            ],
-            "doc_loc": "s3://puyu3-users/shuffle_n_merge/P~Document_QA~unknown~Calligraphy_Recognition_qa_d20241104_jsonl~1.0.0~0.0_Bo1f7-fxaL3SIMUBsVkn/jsonl/part-68d5ff1f93bf-000086.jsonl?bytes=0,476"
-        },
-        {
-            "id": 99999,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "What is the capital of France?"
-                        }
-                    ]
-                },
-                {
-                    "role": "assistant",
-                    "content": "Paris"
-                }
-            ],
-            "doc_loc": "s3://puyu3-users/shuffle_n_merge/P~Text_Only_QA~en~general_qa~1.0.0~0.0/jsonl/part-00000.jsonl?bytes=0,200"
-        }
-    ]
-    
-    print(f"\n{'='*80}")
-    print("运行原有单元测试用例")
-    print(f"{'='*80}\n")
-    
-    for i, test_input in enumerate(test_cases):
-        print(f"\n{'='*60}")
-        print(f"测试用例 {i+1}:")
-        print(f"{'='*60}")
-        try:
-            result = data_converter_stage.process_item(test_input)
-            print("转换结果:")
-            print(result)
-        except Exception as e:
-            import traceback
-            print(f"❌ 转换失败: {str(e)}\n{traceback.format_exc()}")
-    
-    # 新增：扫描 JSONL 文件并测试图像路径推断
-    test_jsonl_files = [
-        "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Document_QA~unknown~Calligraphy_Recognition_qa_d20241104_jsonl~1.0.0~0.0/jsonl/part-68d5ff1f93bf-000086.jsonl",
-        "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~en~scienceqa_choice_augment_en_20240402~1.0.0~0.0/jsonl/part-68d677b6f47f-000086.jsonl",
-        "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_General_MCQ~en~ccbench_inhouse_part1_zh_20240401~1.0.0~0.0/jsonl/part-68d4b8afcdba-000086.jsonl",
-        "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Knowledge_MCQ~en~koniq10k_en_20240403~1.0.0~0.0/jsonl/part-68d4c584252f-000086.jsonl",
-        "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Knowledge_ShortQA~en~viquae_en_20240402~1.0.0~0.0/jsonl/part-68d4c539ae1e-000086.jsonl",
-        "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Science_MCQ~en~scienceqa_choice_aug_en_20240402~1.0.0~0.0/jsonl/part-68d4c44d1ad9-000086.jsonl",
-        "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Science_MCQ~en~scienceqa_multi_choice_en_20240402~1.0.0~0.0/jsonl/part-68d4c4a0aff3-000086.jsonl",
-    ]
-    
-    print(f"\n\n{'='*80}")
-    print("开始扫描 JSONL 文件并测试图像路径推断")
-    print(f"{'='*80}\n")
-    
-    total_items = 0
-    total_with_images = 0
-    total_image_files_checked = 0
-    total_image_files_exist = 0
-    total_image_files_missing = 0
-    
-    for jsonl_file in test_jsonl_files:
-        print(f"\n{'='*80}")
-        print(f"处理文件: {jsonl_file}")
-        print(f"{'='*80}")
-        
-        if not os.path.exists(jsonl_file):
-            print(f"⚠️  文件不存在，跳过")
-            continue
-        
-        file_items = 0
-        file_with_images = 0
-        file_image_files_checked = 0
-        file_image_files_exist = 0
-        file_image_files_missing = 0
-        
-        with open(jsonl_file, 'r', encoding='utf-8') as f:
-            for line_num, line in enumerate(f, 1):
-                if not line.strip():
-                    continue
-                
-                try:
-                    item = json.loads(line)
-                    file_items += 1
-                    
-                    # 检查是否包含图像
-                    has_image = data_converter_stage._has_image_content(item)
-                    if has_image:
-                        file_with_images += 1
-                        
-                        # 推断图像路径
-                        try:
-                            image_base_path = data_converter_stage._get_image_path_for_item(item)
-                            print(f"\n  行 {line_num}: 推断图像路径 = {image_base_path}")
-                            
-                            # 检查图像文件是否存在
-                            for msg in item.get("messages", []):
-                                if msg.get("role") != "user":
-                                    continue
-                                
-                                content = msg.get("content", [])
-                                if isinstance(content, list):
-                                    for content_item in content:
-                                        if isinstance(content_item, dict) and content_item.get("type") == "image_url":
-                                            image_url_data = content_item.get("image_url", {})
-                                            relative_path = image_url_data.get("url", "")
-                                            full_path = os.path.join(image_base_path, relative_path)
-                                            
-                                            file_image_files_checked += 1
-                                            if os.path.exists(full_path):
-                                                file_image_files_exist += 1
-                                                print(f"    ✅ 图像存在: {relative_path}")
-                                            else:
-                                                file_image_files_missing += 1
-                                                print(f"    ❌ 图像缺失: {relative_path}")
-                                                print(f"       完整路径: {full_path}")
-                        
-                        except Exception as e:
-                            import traceback
-                            print(f"\n  行 {line_num}: ❌ 推断失败 - {str(e)}\n{traceback.format_exc()}")
-                
-                except json.JSONDecodeError as e:
-                    import traceback
-                    print(f"  行 {line_num}: JSON 解析错误 - {str(e)}\n{traceback.format_exc()}")
-                except Exception as e:
-                    import traceback
-                    print(f"  行 {line_num}: 处理错误 - {str(e)}\n{traceback.format_exc()}")
-        
-        print(f"\n文件统计:")
-        print(f"  总数据项: {file_items}")
-        print(f"  包含图像: {file_with_images}")
-        print(f"  检查图像文件: {file_image_files_checked}")
-        print(f"  图像存在: {file_image_files_exist}")
-        print(f"  图像缺失: {file_image_files_missing}")
-        
-        total_items += file_items
-        total_with_images += file_with_images
-        total_image_files_checked += file_image_files_checked
-        total_image_files_exist += file_image_files_exist
-        total_image_files_missing += file_image_files_missing
-    
-    print(f"\n{'='*80}")
-    print("总体统计:")
-    print(f"{'='*80}")
-    print(f"总数据项: {total_items}")
-    print(f"包含图像: {total_with_images}")
-    print(f"检查图像文件: {total_image_files_checked}")
-    print(f"图像存在: {total_image_files_exist} ({100*total_image_files_exist/total_image_files_checked:.1f}%)" if total_image_files_checked > 0 else "检查图像文件: 0")
-    print(f"图像缺失: {total_image_files_missing} ({100*total_image_files_missing/total_image_files_checked:.1f}%)" if total_image_files_checked > 0 else "图像缺失: 0")

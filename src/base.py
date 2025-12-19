@@ -1,9 +1,12 @@
 """基类定义: Stage 和 BaseRecipe."""
 
 import asyncio
+import logging
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from typing import Union
+
+logger = logging.getLogger(__name__)
 
 
 class Stage(ABC):
@@ -76,9 +79,9 @@ class Stage(ABC):
                 import traceback
 
                 error_trace = traceback.format_exc()
-                print(f"[{type(self).__name__}] ❌ Item {item.get('id', 'unknown')} failed:")
-                print(f"  Error: {e}")
-                print(f"  Traceback:\n{error_trace}")
+                logger.error(
+                    f"[{type(self).__name__}] ❌ Item {item.get('id', 'unknown')} failed: {e}\n{error_trace}"
+                )
                 results.append(
                     {
                         **item,
@@ -102,9 +105,9 @@ class Stage(ABC):
                 import traceback
 
                 error_trace = traceback.format_exc()
-                print(f"[{type(self).__name__}] ❌ Item {item.get('id', 'unknown')} failed:")
-                print(f"  Error: {e}")
-                print(f"  Traceback:\n{error_trace}")
+                logger.error(
+                    f"[{type(self).__name__}] ❌ Item {item.get('id', 'unknown')} failed: {e}\n{error_trace}"
+                )
                 return {
                     **item,
                     "_failed": True,
@@ -137,9 +140,9 @@ class Stage(ABC):
                 import traceback
 
                 error_trace = traceback.format_exc()
-                print(f"[{type(self).__name__}] ❌ Item {item.get('id', 'unknown')} failed:")
-                print(f"  Error: {e}")
-                print(f"  Traceback:\n{error_trace}")
+                logger.error(
+                    f"[{type(self).__name__}] ❌ Item {item.get('id', 'unknown')} failed: {e}\n{error_trace}"
+                )
                 return {
                     **item,
                     "_failed": True,

@@ -13,6 +13,7 @@ from ray.data import ActorPoolStrategy, TaskPoolStrategy
 
 from .base import BaseRecipe, Stage
 from .utils.data_io import convert_to_python_types, convert_scalar_to_python
+from .utils.framework import FRAMEWORK_FIELDS
 
 
 def clean_nan_values(item: dict, warn: bool = True) -> dict:
@@ -459,9 +460,6 @@ class Pipeline:
                 # 转为 list of dict, 并转换为 Python 原生类型
                 rows = df.to_dict("records")
                 rows = [convert_to_python_types(row) for row in rows]
-
-                # 框架内部字段（需要自动保留）
-                FRAMEWORK_FIELDS = {"_resume_id", "_failed", "_error", "_traceback"}
 
                 # 保存每个 item 的框架字段
                 framework_data = {}

@@ -17,6 +17,10 @@ Usage:
     python run.py --input data/*.jsonl --output-dir results/exp001
     # 输出: results/exp001/sft_YYYYMMDD_HHMMSS/sft_*.jsonl
 
+    # 自定义 SFT 子目录名称
+    python run.py --input data/train.jsonl --sft-subdir custom_output
+    # 输出: data/custom_output/YYYYMMDD_HHMMSS/train_sft.jsonl
+
     # 连接到 Ray 集群
     python run.py --input data/*.jsonl --ray-address auto
 """
@@ -39,10 +43,13 @@ import sys
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, PROJECT_ROOT)
 
-import ray
+# 动态导入当前 recipe 的模块（方便复制目录）
+from importlib import import_module
+_recipe_name = os.path.basename(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SFTConfig = import_module(f"recipes.{_recipe_name}.config").SFTConfig
+SFTRecipe = import_module(f"recipes.{_recipe_name}.recipe").SFTRecipe
 
-from recipes.vl_cot_sft_plus.config import SFTConfig
-from recipes.vl_cot_sft_plus.recipe import SFTRecipe
+import ray
 from src.pipeline import Pipeline
 
 
@@ -72,6 +79,12 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="_sft",
         help="输出文件名后缀，例如 train.jsonl -> train_sft.jsonl",
+    )
+    parser.add_argument(
+        "--sft-subdir",
+        type=str,
+        default="sft",
+        help="SFT 输出子目录名称，默认为 'sft'",
     )
     parser.add_argument(
         "--latest",
@@ -258,10 +271,10 @@ def main():
             if latest_dir:
                 output_base_dir = latest_dir
             else:
-                output_base_dir = os.path.join(args.output_dir, f"sft_{timestamp}")
+                output_base_dir = os.path.join(args.output_dir, f"{args.sft_subdir}_{timestamp}")
         else:
             # 直接创建新的时间戳目录
-            output_base_dir = os.path.join(args.output_dir, f"sft_{timestamp}")
+            output_base_dir = os.path.join(args.output_dir, f"{args.sft_subdir}_{timestamp}")
         
         output_files = [
             generate_output_path(input_file, output_base_dir, args.output_suffix)
@@ -272,7 +285,7 @@ def main():
         output_files = []
         for input_file in input_files:
             input_dir = os.path.dirname(os.path.abspath(input_file))
-            sft_base_dir = os.path.join(input_dir, "sft")
+            sft_base_dir = os.path.join(input_dir, args.sft_subdir)
             
             if args.latest:
                 # 尝试从最新时间戳目录续传
