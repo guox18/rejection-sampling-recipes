@@ -64,7 +64,8 @@ class Stage(ABC):
         """同步模式: 顺序处理每个 item."""
         results = []
         for item in batch:
-            if item.get("_failed"):
+            # 只有当 _failed 明确为 True 时才跳过（避免 NaN 或 None 导致误判）
+            if item.get("_failed") is True:
                 results.append(item)
                 continue
 
@@ -92,7 +93,8 @@ class Stage(ABC):
         """多线程模式: 用线程池并发处理 batch 内的 item."""
 
         def safe_process_one(item):
-            if item.get("_failed"):
+            # 只有当 _failed 明确为 True 时才跳过（避免 NaN 或 None 导致误判）
+            if item.get("_failed") is True:
                 return item
             try:
                 return self.process_item(item)
@@ -121,7 +123,8 @@ class Stage(ABC):
         is_async = asyncio.iscoroutinefunction(self.process_item)
 
         async def safe_process_one(item):
-            if item.get("_failed"):
+            # 只有当 _failed 明确为 True 时才跳过（避免 NaN 或 None 导致误判）
+            if item.get("_failed") is True:
                 return item
             try:
                 if is_async:

@@ -15,6 +15,39 @@ from .base import BaseRecipe, Stage
 from .utils.data_io import convert_to_python_types, convert_scalar_to_python
 
 
+def clean_nan_values(item: dict, warn: bool = True) -> dict:
+    """
+    清理字典中的 NaN 值，将其转换为 None. 数据是列式操作的, 所有 item 需要具有相同的字段.
+    如果有些项独有某些字段, pandas 会为缺失的字段带上 NaN 值.
+    
+    Args:
+        item: 要清理的数据字典
+        warn: 是否在发现 NaN 时打印警告
+    
+    Returns:
+        清理后的字典（NaN 转换为 None）
+    """
+    import math
+    
+    has_nan = False
+    cleaned_item = {}
+    
+    for k, v in item.items():
+        # 检查是否为 NaN（包括 pandas 的 NaN 和 numpy 的 nan）
+        if isinstance(v, float) and math.isnan(v):
+            if warn and not has_nan:
+                # 第一次发现 NaN 时打印警告（每个 item 只警告一次）
+                print(f"⚠️  Warning: Found NaN value in item {item.get('id', 'unknown')}")
+                print(f"   This should not happen after framework initialization.")
+                print(f"   Please report this as a bug if you see this message.")
+                has_nan = True
+            cleaned_item[k] = None
+        else:
+            cleaned_item[k] = v
+    
+    return cleaned_item
+
+
 class Pipeline:
     """
     流水线框架, 封装 Ray Data.
@@ -220,9 +253,19 @@ class Pipeline:
         # 读取数据（JSONL 格式：每行一个 JSON 对象）
         ds = ray.data.read_json(input_path, lines=True)
 
-        # 添加 _resume_id 字段（框架内部字段，用于断点续传）
-        def add_resume_id(batch):
-            """为每个 item 添加 _resume_id（基于内容哈希）."""
+        # 添加框架字段（用于断点续传和错误处理）
+        def add_framework_fields(batch):
+            """
+            为每个 item 添加框架字段.
+            
+            框架字段：
+            - _resume_id: 基于内容哈希的唯一 ID（用于断点续传）
+            - _failed: 标记 item 是否处理失败（初始值 None）
+            - _error: 错误消息（初始值 None）
+            - _traceback: 错误堆栈（初始值 None）
+            
+            所有 item 都会有这些字段，避免 pandas DataFrame 填充 NaN。
+            """
             import pandas as pd
 
             # 转为 DataFrame（如果不是的话）
@@ -254,11 +297,16 @@ class Pipeline:
 
                 resume_ids.append(resume_id)
 
+            # 添加所有框架字段（初始值为 None，确保数据结构一致）
             df["_resume_id"] = resume_ids
+            df["_failed"] = None
+            df["_error"] = None
+            df["_traceback"] = None
+            
             return df
 
         ds = ds.map_batches(
-            add_resume_id,
+            add_framework_fields,
             batch_format="pandas",
             batch_size=self.batch_size,
             compute=TaskPoolStrategy(size=self.concurrency),
@@ -314,17 +362,18 @@ class Pipeline:
                     # row 是字典格式
                     item = dict(row)
                     total_rows += 1
+                    
+                    # 清理 NaN 值（兜底保护）
+                    item = clean_nan_values(item, warn=True)
 
-                    # 跳过失败的 item（如果最后一个 Stage 没有过滤掉的话）
-                    if item.get("_failed"):
+                    # 统计失败的 item，但仍然保留在输出中
+                    # 注意：经过清理后，_failed 应该是 True/False/None，而不是 NaN
+                    if item.get("_failed") is True:
                         failed_rows += 1
-                        error_msg = item.get("_error", "Unknown error")
-                        # 处理 NaN 值
-                        if error_msg != error_msg:  # NaN check (NaN != NaN)
-                            error_msg = "No error message (NaN)"
+                        error_msg = item.get("_error") or "Unknown error"
                         item_id = item.get("id", "unknown")
                         resume_id = item.get("_resume_id", "unknown")
-                        print(f"[Pipeline] ❌ Skipping failed item:")
+                        print(f"[Pipeline] ⚠️  Writing failed item to output:")
                         print(f"  - ID: {item_id}")
                         print(f"  - Resume ID: {resume_id}")
                         print(f"  - Error: {error_msg}")
@@ -335,9 +384,10 @@ class Pipeline:
                             if k in ["id", "_resume_id", "_error", "_failed"]
                         }
                         print(f"  - Debug info: {debug_info}")
-                        continue
-
-                    success_rows += 1
+                    else:
+                        success_rows += 1
+                    
+                    # 写入所有 item（包括失败的）
                     f.write(json.dumps(item, ensure_ascii=False) + "\n")
 
                     # 定期刷新，确保数据及时写入磁盘（断点续传）
@@ -418,37 +468,28 @@ class Pipeline:
                 for idx, item in enumerate(rows):
                     framework_data[idx] = {k: item.get(k) for k in FRAMEWORK_FIELDS}
 
-                # 分离失败和正常的 item
-                failed_items = []
-                normal_items = []
-                normal_items_indices = []  # 记录正常 item 的原始索引
-
-                for idx, item in enumerate(rows):
-                    if item.get("_failed"):
-                        failed_items.append(item)
-                    else:
-                        normal_items.append(item)
-                        normal_items_indices.append(idx)
-
-                # 处理正常的 item
-                if normal_items:
+                # 处理所有 item（包括失败的），由 Stage 内部决定是否跳过失败的 item
+                if rows:
                     try:
                         if is_async:
                             # 异步模式：使用 asyncio 运行
-                            results = asyncio.run(self._stage.process(normal_items))
+                            results = asyncio.run(self._stage.process(rows))
                         else:
                             # 同步模式
-                            results = self._stage.process(normal_items)
+                            results = self._stage.process(rows)
 
                         # 自动恢复框架字段到处理结果中
-                        for result_idx, result in enumerate(results):
-                            original_idx = normal_items_indices[result_idx]
-                            saved_fields = framework_data[original_idx]
+                        for idx, result in enumerate(results):
+                            saved_fields = framework_data[idx]
 
-                            # 只恢复非 None 的框架字段（除非 Stage 明确设置了它们）
+                            # 恢复框架字段：如果 saved_fields 中的值不是 None，
+                            # 且 result 中的值是 None，则恢复 saved_fields 中的值
+                            # 这样可以防止 Stage 通过复制 item 时意外覆盖框架字段
                             for field, value in saved_fields.items():
-                                if value is not None and field not in result:
-                                    result[field] = value
+                                if value is not None:
+                                    # 如果字段不存在，或者存在但值为 None，则恢复
+                                    if field not in result or result[field] is None:
+                                        result[field] = value
 
                     except Exception as e:
                         # 失败处理兜底, 标记所有 item 为失败.
@@ -460,10 +501,9 @@ class Pipeline:
                         print(f"  Error: {e}")
                         print(f"  Traceback:\n{error_trace}")
                         results = []
-                        for result_idx, item in enumerate(normal_items):
-                            original_idx = normal_items_indices[result_idx]
-                            saved_fields = framework_data[original_idx]
-                            # 保留原有的 _resume_id，添加失败标记
+                        for idx, item in enumerate(rows):
+                            saved_fields = framework_data[idx]
+                            # 保留原有的框架字段，添加失败标记
                             result = {
                                 **item,
                                 **saved_fields,  # 恢复框架字段
@@ -475,13 +515,33 @@ class Pipeline:
                 else:
                     results = []
 
-                # 合并结果：失败的 item + 处理结果
-                all_results = failed_items + results
+                # 所有结果
+                all_results = results
 
                 # 转回 DataFrame
                 if not all_results:
                     return pd.DataFrame()
 
+                # 框架层容错：确保字段对齐，避免 pandas 填充 NaN
+                # 检查是否需要字段对齐（当不同 item 的字段不一致时）
+                if len(all_results) > 1:
+                    all_keys = [set(item.keys()) for item in all_results]
+                    need_alignment = not all(keys == all_keys[0] for keys in all_keys)
+                    
+                    if need_alignment:
+                        # 收集所有字段
+                        all_fields = set()
+                        for item in all_results:
+                            all_fields.update(item.keys())
+                        
+                        # 为每个 item 补全缺失字段（设为 None）
+                        aligned_results = []
+                        for item in all_results:
+                            aligned_item = {field: item.get(field, None) for field in all_fields}
+                            aligned_results.append(aligned_item)
+                        
+                        return pd.DataFrame(aligned_results)
+                
                 return pd.DataFrame(all_results)
 
         return StageCallable

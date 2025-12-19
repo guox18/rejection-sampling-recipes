@@ -155,6 +155,9 @@ class VerifierStage(Stage):
         """
         处理单个 item, 为所有 responses 打分.
         """
+        if item.get("_failed") is :
+            return item
+        
         responses = item.get("responses", [])
         metadata = item.get("metadata", {})
         messages = item.get("messages", [])
@@ -326,6 +329,7 @@ class FormatterStage(Stage):
         """
         处理单个 item, 格式化为 SFT 训练数据.
         """
+        
         messages = item.get("messages", [])
         rollouts = item.get("rollouts", [])
         metadata = item.get("metadata", {})
@@ -372,12 +376,10 @@ class FormatterStage(Stage):
             }
         )
 
+        
         result = {}
-        if "id" in item:
-            result["id"] = item["id"]
-
         result = {
-            **result,
+            **item,
             "messages": sft_messages,
             "metadata": clean_metadata,
         }

@@ -1,0 +1,1091 @@
+"""
+SFT Recipe: 采样 → 验证 → 格式化.
+
+Stage 支持三种执行模式:
+- 同步模式: 顺序执行 (默认)
+- 异步模式: asyncio 并发执行 (@Stage.async_mode)
+- 多线程模式: 线程池并发执行 (@Stage.threaded_mode)
+
+Stage 支持两种实现方式:
+- 只实现 process_item(): 框架自动批处理和异常处理 (推荐)
+- 覆盖 process(): 完全自定义批处理 (高级)
+
+本文件示例:
+- SamplerStage: 异步 + process_item + AsyncOpenAIClient (API 调用)
+- VerifierStage: 多线程 + process_item + SyncOpenAIClient (LLM Judge)
+- FormatterStage: 同步 + process_item (数据格式化)
+
+框架内部字段: 
+- _resume_id: 用于断点续传的唯一标识符（基于内容哈希）
+- _failed: 标记处理失败的数据项
+- _error: 失败原因
+- _traceback: 失败时的堆栈跟踪
+
+注意：
+- 这些字段由 Pipeline 框架自动添加和保留
+- Stage 实现时无需手动处理这些字段
+- 即使 Stage 不返回这些字段，框架也会自动恢复它们
+"""
+
+import asyncio
+import logging
+import os
+
+import aiohttp
+
+from src.base import BaseRecipe, Stage
+
+from .config import SFTConfig
+from .tools import AsyncOpenAIClient, SyncOpenAIClient, DEFAULT_JUDGE_TEMPLATE, clip_thinking
+
+# 配置专门的 Recipe 日志 - 简洁格式，只输出到文件
+def _setup_recipe_logger():
+    """配置简洁的 Recipe 日志"""
+    logger = logging.getLogger("recipe")
+    logger.setLevel(logging.INFO)
+    logger.propagate = False  # 不传播到 root logger
+    
+    # 如果已经有 handler，不重复添加
+    if logger.handlers:
+        return logger
+    
+    # 从环境变量读取日志文件路径
+    log_file = os.environ.get("RECIPE_LOG_FILE", "recipe_run.log")
+    
+    # 创建文件 handler
+    handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+    handler.setLevel(logging.INFO)
+    
+    # 简洁格式：只有时间和消息
+    formatter = logging.Formatter('%(asctime)s - %(message)s', datefmt='%H:%M:%S')
+    handler.setFormatter(formatter)
+    
+    logger.addHandler(handler)
+    return logger
+
+logger = _setup_recipe_logger()
+
+
+class DataConverterStage(Stage):
+    """
+    数据格式转换阶段：将原始数据转换为 SFT 训练格式.
+    
+    支持的输入格式：
+    1. 多模态数据（带图像）
+    2. 纯文本数据（不带图像）
+    
+    输入格式示例 1 - 多模态数据:
+    {
+        "id": -1,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": "image.jpg", "image_wh": [1000,1000]}},
+                    {"type": "text", "text": "<IMG_CONTEXT>\n问题文本"}
+                ]
+            },
+            {"role": "assistant", "content": "答案"}
+        ],
+        "doc_loc": "s3://.../P~xxx~1.0.0~0.0/jsonl/part-001.jsonl"
+    }
+    
+    输入格式示例 2 - 纯文本数据:
+    {
+        "id": 123,
+        "messages": [
+            {"role": "user", "content": "问题文本"},
+            {"role": "assistant", "content": "答案"}
+        ],
+        "doc_loc": "s3://..."
+    }
+    
+    转换规则:
+    1. 对于多模态数据：读取本地图片文件并编码为 base64（保持 OpenAI 格式以兼容 vLLM API）
+    2. 对于纯文本数据：将字符串格式转换为标准的 content 列表格式
+    3. 移除 <IMG_CONTEXT> 标记
+    4. 提取 assistant 的回答到 metadata.answer
+    5. 只保留 user 消息
+    6. 保留原始的 image_wh 信息（如果存在）
+    
+    输出格式:
+    {
+        "id": "xxx",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,...", "image_wh": [w, h]}},  # 如果有图像
+                    {"type": "text", "text": "问题文本"}
+                ]
+            }
+        ],
+        "metadata": {"answer": "答案"}
+    }
+    """
+    
+    def __init__(self, config: SFTConfig):
+        """
+        初始化数据转换器.
+        
+        Args:
+            config: SFT 配置对象，包含图片路径等配置
+        
+        图片路径配置优先级:
+            1. image_base_path: 完整路径，所有数据集共用
+            2. image_base_dir: 基础目录，为每个数据集动态推断完整路径
+        """
+        self.config = config
+        self.abs_image_path_field = config.abs_image_path_field
+    
+    def _get_nested_value(self, item: dict, field_path: str):
+        """
+        获取嵌套字段的值.
+        
+        Args:
+            item: 数据字典
+            field_path: 字段路径，如 "meta_info.abs_image_path" 或 "abs_path"
+        
+        Returns:
+            字段值，如果不存在则返回 None
+        """
+        parts = field_path.split(".")
+        value = item
+        for part in parts:
+            if isinstance(value, dict) and part in value:
+                value = value[part]
+            else:
+                return None
+        return value
+    
+    def _convert_image_url_to_base64(self, content_item: dict, image_base_path: str) -> tuple[dict, str, str]:
+        """
+        将 image_url 格式转换为 base64 编码格式.
+        
+        读取本地图片文件并编码为 base64，兼容 vLLM API endpoint.
+        同时保留原始的 image_wh 信息（图片宽高）。
+        
+        Args:
+            content_item: {"type": "image_url", "image_url": {"url": "...", "image_wh": [w, h]}}
+            image_base_path: 图片基础路径（绝对路径）
+        
+        Returns:
+            tuple: (converted_content_item, full_image_path, relative_path)
+                - converted_content_item: {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,...", "image_wh": [w, h]}}
+                - full_image_path: 图像文件的完整路径（用于调试）
+                - relative_path: 原始的相对路径（用于最终输出恢复）
+        
+        Raises:
+            ValueError: 如果图片路径未提供或图像文件过大
+            FileNotFoundError: 如果图片文件不存在
+        """
+        import base64
+        import mimetypes
+        
+        if not image_base_path:
+            raise ValueError(
+                "遇到图像数据但未提供图片绝对路径。\n"
+                "请先运行 preprocess_images.py 脚本为数据添加绝对路径信息。"
+            )
+        
+        image_url_data = content_item.get("image_url", {})
+        relative_path = image_url_data.get("url", "")
+        full_path = os.path.join(image_base_path, relative_path)
+        
+        # 检查文件是否存在
+        if not os.path.exists(full_path):
+            raise FileNotFoundError(f"Image file not found: {full_path}")
+        
+        # 检查图像文件大小（避免过大的图像导致输出过长）
+        file_size = os.path.getsize(full_path)
+        max_image_size = getattr(self.config, 'max_image_size_mb', 10) * 1024 * 1024  # 默认 10MB
+        if file_size > max_image_size:
+            size_mb = file_size / (1024 * 1024)
+            max_size_mb = max_image_size / (1024 * 1024)
+            raise ValueError(
+                f"Image file too large: {size_mb:.2f}MB (max: {max_size_mb:.2f}MB)\n"
+                f"File: {full_path}\n"
+                f"Large images may cause output to be too long or exceed token limits."
+            )
+        
+        # 读取图像文件
+        with open(full_path, 'rb') as f:
+            image_data = f.read()
+        
+        # 编码为 base64
+        base64_encoded = base64.b64encode(image_data).decode('utf-8')
+        
+        # 推断 MIME 类型
+        mime_type, _ = mimetypes.guess_type(full_path)
+        if mime_type is None:
+            # 默认使用 jpeg
+            mime_type = "image/jpeg"
+        
+        # 保留原始的 image_wh 信息（如果有）
+        image_wh = image_url_data.get("image_wh")
+        
+        # 返回 base64 编码的 data URL、完整路径和相对路径
+        converted_item = {
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:{mime_type};base64,{base64_encoded}"
+            }
+        }
+        
+        # 如果原始数据包含尺寸信息，保留它
+        if image_wh:
+            converted_item["image_url"]["image_wh"] = image_wh
+        
+        return converted_item, full_path, relative_path
+    
+    def _normalize_text_content(self, content_item: dict) -> dict:
+        """
+        标准化文本内容，移除特殊标记.
+        
+        Args:
+            content_item: {"type": "text", "text": "..."}
+        
+        Returns:
+            处理后的文本 content
+        """
+        text = content_item.get("text", "")
+        # 移除 <IMG_CONTEXT> 标记
+        text = text.replace("<IMG_CONTEXT>\n", "").strip()
+        
+        return {
+            "type": "text",
+            "text": text
+        }
+    
+    def _process_user_content(self, content, image_base_path: str = None) -> tuple[list, list, list]:
+        """
+        处理 user 消息的 content 字段.
+        
+        Args:
+            content: 可能是字符串或列表
+            image_base_path: 图片基础路径（如果包含图像）
+        
+        Returns:
+            tuple: (content_list, image_paths, relative_paths)
+                - content_list: 标准化的 content 列表
+                - image_paths: 图像文件完整路径列表（用于调试）
+                - relative_paths: 原始的相对路径列表（用于最终输出恢复）
+        """
+        # 情况1：纯文本格式（字符串）
+        if isinstance(content, str):
+            return [{
+                "type": "text",
+                "text": content
+            }], [], []
+        
+        # 情况2：结构化格式（列表）
+        new_content = []
+        image_paths = []
+        relative_paths = []
+        for content_item in content:
+            if not isinstance(content_item, dict):
+                continue  # 跳过非字典元素
+            
+            content_type = content_item.get("type")
+            
+            if content_type == "image_url":
+                converted_item, full_path, relative_path = self._convert_image_url_to_base64(content_item, image_base_path)
+                new_content.append(converted_item)
+                image_paths.append(full_path)
+                relative_paths.append(relative_path)
+            elif content_type == "text":
+                new_content.append(self._normalize_text_content(content_item))
+            else:
+                # 保留其他类型
+                new_content.append(content_item)
+        
+        return new_content, image_paths, relative_paths
+    
+    def process_item(self, item: dict) -> dict:
+        """
+        处理单个数据项，转换为 SFT 训练格式.
+        
+        Args:
+            item: 原始数据项（预处理后应包含绝对路径信息）
+        
+        Returns:
+            转换后的数据项
+        
+        Raises:
+            ValueError: 如果包含图像但绝对路径字段不存在
+        """
+        # 1. 获取图片绝对路径（从配置的字段读取）
+        image_base_path = self._get_nested_value(item, self.abs_image_path_field)
+        
+        # 2. 初始化结果
+        result = {
+            "id": item.get("id", "unknown"),
+            "messages": [],
+            "metadata": {}
+        }
+        
+        # 3. 提取 assistant 的回答到 metadata
+        for msg in item.get("messages", []):
+            if msg.get("role") == "assistant":
+                answer = msg.get("content", "")
+                if answer:
+                    result["metadata"]["answer"] = answer
+                break
+        
+        # 4. 处理 user 消息，收集图像路径和相对路径
+        all_image_paths = []
+        all_relative_paths = []
+        for msg in item.get("messages", []):
+            if msg.get("role") == "user":
+                content = msg.get("content", [])
+                new_content, image_paths, relative_paths = self._process_user_content(content, image_base_path)
+                all_image_paths.extend(image_paths)
+                all_relative_paths.extend(relative_paths)
+                
+                result["messages"].append({
+                    "role": "user",
+                    "content": new_content
+                })
+        
+        # 5. 将图像路径和相对路径保存到 metadata
+        if all_image_paths:
+            result["metadata"]["image_paths"] = all_image_paths  # 用于调试
+        if all_relative_paths:
+            result["metadata"]["original_image_urls"] = all_relative_paths  # 用于最终输出恢复
+        
+        return result
+
+# ============================================================
+# 示例 1: 异步模式 - 使用装饰器 (推荐)
+# ============================================================
+
+@Stage.async_mode
+class SamplerStage(Stage):
+    """
+    采样阶段: 为每个 item 生成 n 个 responses.
+    
+    模式: 异步模式 (@Stage.async_mode)
+    - 覆盖 process() 方法，在 batch 级别管理 session
+    - Session 和 semaphore 在每个 batch 创建，处理完后关闭
+    - 避免事件循环不一致问题，代码更简洁
+    """
+    
+    def __init__(self, config: SFTConfig):
+        self.config = config
+        self.client: AsyncOpenAIClient = None
+    
+    def initialize(self):
+        """Actor 创建时调用一次, 创建共享的客户端配置."""
+        self.client = AsyncOpenAIClient(
+            api_key=self.config.api_key,
+            base_url=self.config.base_url,
+            max_retries=self.config.max_retries,
+            semaphore_size=self.config.semaphore_per_sampler,
+        )
+    
+    async def process(self, batch: list[dict]) -> list[dict]:
+        """
+        处理一个 batch，在 batch 级别创建和管理 session.
+        """
+        # 创建 batch 级别的 session 和 semaphore
+        async with aiohttp.ClientSession() as session:
+            semaphore = asyncio.Semaphore(self.client.semaphore_size)
+            
+            # 并发处理 batch 内的所有 items
+            async def process_one(item: dict) -> dict:
+                if item.get("_failed"):
+                    return item
+                
+                try:
+                    messages = item.get("messages", [])
+                    item_id = item.get("id", "unknown")
+                    
+                    # 调用 API
+                    responses = await self.client.chat_completion(
+                        session=session,
+                        semaphore=semaphore,
+                        messages=messages,
+                        model=self.config.model,
+                        n=self.config.n_samples,
+                        temperature=self.config.temperature,
+                        max_tokens=self.config.max_tokens,
+                    )
+                    logger.info(f"[SamplerStage] Item {item_id}: Generated {len(responses)} responses")
+                    
+                    return {**item, "responses": responses}
+                except Exception as e:
+                    import traceback
+                    error_trace = traceback.format_exc()
+                    item_id = item.get('id', 'unknown')
+                    logger.error(f"[SamplerStage] ❌ Item {item_id} failed: {e}\n{error_trace}")
+                    return {**item, "_failed": True, "_error": f"SamplerStage: {e}", "_traceback": error_trace}
+            
+            return await asyncio.gather(*[process_one(item) for item in batch])
+
+
+# ============================================================
+# 示例 2: 多线程模式 - 使用装饰器 
+# ============================================================
+
+@Stage.threaded_mode
+class VerifierStage(Stage):
+    """
+    验证阶段: 使用 LLM-as-Judge 为每个 response 打分.
+    
+    模式: 多线程
+    - 使用 @Stage.threaded_mode 装饰器
+    - 在 initialize() 中通过设置 self._thread_pool_size 指定线程池大小
+    - 实现 process_item(), 框架自动并发处理 batch 内的多个 item
+    """
+    
+    def __init__(self, config: SFTConfig):
+        self.config = config
+        self.client: SyncOpenAIClient = None
+    
+    def initialize(self):
+        """
+        Actor 创建时调用一次, 设置线程池大小并初始化客户端.
+        
+        通过设置 self._thread_pool_size 指定线程池大小.
+        """
+        self._thread_pool_size = self.config.verifier_max_workers
+        
+        # 初始化同步客户端
+        api_key = self.config.judge_api_key or self.config.api_key
+        base_url = self.config.judge_base_url or self.config.base_url
+        
+        self.client = SyncOpenAIClient(api_key=api_key, base_url=base_url)
+        self.client.initialize()
+    
+    def process_item(self, item: dict) -> dict:
+        """
+        处理单个 item, 为所有 responses 打分.
+        
+        框架保证:
+        - 自动用线程池并发处理 batch 内的 item (由 verifier_max_workers 控制)
+        - 自动捕获异常, 失败的 item 标记 _failed=True
+        - 失败的 item 会被框架自动跳过, 不会进入 process_item 方法
+        - 无需手动 try-catch
+        """
+        
+        responses = item.get("responses", [])
+        metadata = item.get("metadata", {})
+        messages = item.get("messages", [])
+        item_id = item.get("id", "unknown")
+        
+        logger.info(f"[VerifierStage] Item {item_id}: Verifying {len(responses)} responses")
+        
+        # 提取问题 (支持多模态数据)
+        question = ""
+        if messages:
+            for msg in reversed(messages):
+                if msg.get("role") == "user":
+                    content = msg.get("content", "")
+                    # 如果 content 是 list (多模态), 提取 text 部分
+                    if isinstance(content, list):
+                        for content_item in content:
+                            if isinstance(content_item, dict) and content_item.get("type") == "text":
+                                question = content_item.get("text", "")
+                                break
+                    else:
+                        # 如果 content 是 string (纯文本)
+                        question = content
+                    break
+        
+        # 验证所有 responses, 并返回第一条 judge 提示词和输出用于调试
+        rollouts, first_judge_prompt, first_judge_output = self._verify_llm_judge(responses, metadata, question)
+        
+        # 返回结果（排除 responses 字段）
+        result = {k: v for k, v in item.items() if k != "responses"}
+        result["rollouts"] = rollouts
+        
+        # 保存第一条 judge 提示词和输出到 metadata (用于调试)
+        if first_judge_prompt is not None:
+            if "metadata" not in result:
+                result["metadata"] = {}
+            result["metadata"]["judge_prompt_sample"] = first_judge_prompt
+            result["metadata"]["judge_output_sample"] = first_judge_output
+        
+        return result
+    
+    def _verify_llm_judge(self, responses: list[str], metadata: dict, question: str) -> tuple[list[dict], str, str]:
+        """
+        使用 LLM Judge 验证多个 responses.
+        
+        对 1 个 item 的 N 个 responses, 顺序调用 judge 验证.
+        
+        Returns:
+            tuple: (rollouts, first_judge_prompt, first_judge_output)
+                - rollouts: 验证结果列表
+                - first_judge_prompt: 第一条 judge 提示词 (用于调试)
+                - first_judge_output: 第一条 judge 输出结果 (用于调试)
+        """
+        if not responses:
+            return [], None, None
+        
+        gold_target = metadata.get("answer") or metadata.get("gold_target", "")
+        rollouts = []
+        first_judge_prompt = None
+        first_judge_output = None
+        
+        for idx, response in enumerate(responses):
+            clipped_response = clip_thinking(response)
+            prompt = DEFAULT_JUDGE_TEMPLATE.format(
+                question=question,
+                gold_target=gold_target,
+                predicted_answer=clipped_response,
+            )
+            
+            try:
+                judge_output = self._call_judge(prompt)
+                is_correct = self._parse_judge_output(judge_output)
+                score = 1.0 if is_correct else 0.0
+                
+                # 保存第一条提示词和输出用于调试
+                if idx == 0:
+                    first_judge_prompt = prompt
+                    first_judge_output = judge_output
+            except Exception as e:
+                import traceback
+                error_trace = traceback.format_exc()
+                logger.warning(f"[VerifierStage] ⚠️  Judge error on response {idx}: {e}\n{error_trace}")
+                score = 0.0
+                
+                # 第一条失败时也要记录
+                if idx == 0:
+                    first_judge_prompt = prompt
+                    first_judge_output = f"ERROR: {e}\n\nTraceback:\n{error_trace}"
+            
+            rollouts.append({"response": response, "score": score})
+        
+        return rollouts, first_judge_prompt, first_judge_output
+    
+    def _call_judge(self, prompt: str) -> str:
+        """调用 judge model."""
+        model = self.config.judge_model or self.config.model
+        return self.client.chat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            model=model,
+            max_tokens=self.config.judge_max_tokens,
+            temperature=self.config.judge_temperature,
+        )
+    
+    def _parse_judge_output(self, output: str) -> bool:
+        """解析 judge 输出 (A=正确, B=错误)."""
+        if not output:
+            return False
+        cleaned = output.strip().lower()
+        if cleaned in ("a", "correct"):
+            return True
+        elif cleaned in ("b", "incorrect"):
+            return False
+        else:
+            return False
+
+
+# ============================================================
+# 示例 3: 同步模式 - 只实现 process_item (推荐)
+# ============================================================
+
+class FormatterStage(Stage):
+    """
+    格式化阶段: 选择通过验证的 response, 输出 SFT 格式.
+    
+    模式: 同步
+    - 只实现 process_item()
+    - 框架自动处理异常, 顺序执行
+    - 适合: 轻量计算, 无需并发
+    """
+    
+    def __init__(self, config: SFTConfig):
+        self.config = config
+    
+    def _restore_image_urls(self, messages: list, original_urls: list) -> list:
+        """
+        将 messages 中的 base64 图像 URL 恢复为原始相对路径.
+        
+        Args:
+            messages: 包含 base64 图像的消息列表
+            original_urls: 原始的相对路径列表
+        
+        Returns:
+            恢复相对路径后的消息列表
+        """
+        if not original_urls:
+            return messages
+        
+        # 复制 messages 避免修改原始数据
+        restored_messages = []
+        url_index = 0
+        
+        for msg in messages:
+            restored_msg = {"role": msg["role"]}
+            content = msg.get("content")
+            
+            # 如果是 user 消息且 content 是列表（可能包含图像）
+            if msg.get("role") == "user" and isinstance(content, list):
+                restored_content = []
+                for content_item in content:
+                    if isinstance(content_item, dict) and content_item.get("type") == "image_url":
+                        # 恢复为原始相对路径
+                        if url_index < len(original_urls):
+                            restored_item = {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": original_urls[url_index]
+                                }
+                            }
+                            # 保留 image_wh 信息（如果原始数据有的话）
+                            image_url_data = content_item.get("image_url", {})
+                            if "image_wh" in image_url_data:
+                                restored_item["image_url"]["image_wh"] = image_url_data["image_wh"]
+                            
+                            restored_content.append(restored_item)
+                            url_index += 1
+                        else:
+                            # 如果没有对应的原始 URL，保持原样
+                            restored_content.append(content_item)
+                    else:
+                        restored_content.append(content_item)
+                restored_msg["content"] = restored_content
+            else:
+                # 非 user 消息或纯文本，直接复制
+                restored_msg["content"] = content
+            
+            restored_messages.append(restored_msg)
+        
+        return restored_messages
+
+    # 重写 process batch, 手动处理失败. 
+    def process(self, batch: list[dict]) -> list[dict]:
+        """
+        处理 batch, 失败项也需要处理.
+        """
+        results = []
+        for item in batch:
+            try:
+                results.append(self.process_item(item))
+            except Exception as e:
+                import traceback
+                error_trace = traceback.format_exc()
+                logger.error(f"[FormatterStage] ❌ Item {item.get('id', 'unknown')} failed: {e}\n{error_trace}")
+                results.append({**item, "_failed": True, "_error": f"FormatterStage: {e}", "_traceback": error_trace})
+        return results
+    
+    def process_item(self, item: dict) -> dict:
+        """
+        处理单个 item, 格式化为 SFT 训练数据.
+        """
+        messages = item.get("messages", [])
+        rollouts = item.get("rollouts") or []
+        metadata = item.get("metadata", {})
+        item_id = item.get("id", "unknown")
+        
+        # 选择通过验证的 responses
+        passed = [r for r in rollouts if r.get("score", 0) >= self.config.pass_threshold]
+        logger.info(f"[FormatterStage] Item {item_id}: {len(passed)}/{len(rollouts)} passed")
+        
+        # 选择 best response
+        if passed:
+            best_response = passed[0]["response"]
+            used_gt = False
+        else:
+            # 回退到 ground truth
+            gt = metadata.get("answer") or metadata.get("gold_target", "")
+            if gt:
+                best_response = gt
+                used_gt = True
+                logger.info(f"[FormatterStage] Item {item_id}: Using ground truth")
+            else:
+                # 主动标记失败
+                logger.warning(f"[FormatterStage] Item {item_id}: No valid response")
+                return {
+                    **item,
+                    "_failed": True,
+                    "_error": "No response passed and no ground truth",
+                }
+        
+        # 构建 SFT 格式
+        sft_messages = messages + [{"role": "assistant", "content": best_response}]
+        
+        # 恢复原始图像 URL（从 base64 恢复为相对路径）
+        original_urls = metadata.get("original_image_urls", [])
+        if original_urls:
+            sft_messages = self._restore_image_urls(sft_messages, original_urls)
+        
+        # 清理 metadata（移除内部调试信息）
+        clean_metadata = {k: v for k, v in metadata.items() 
+                         if k not in ["image_paths", "original_image_urls", "judge_prompt_sample", "judge_output_sample"]}
+        clean_metadata.update({
+            "n_passed": len(passed),
+            "n_total": len(rollouts),
+            "used_ground_truth": used_gt,
+        })
+        
+        result = {}
+        result = {
+            **item,
+            "messages": sft_messages,
+            "metadata": clean_metadata,
+        }
+        
+        return result
+
+
+# ============================================================
+# Recipe 定义
+# ============================================================
+
+class SFTRecipe(BaseRecipe):
+    """
+    SFT Recipe: 组合 3 个 Stage 完成 SFT 数据生成.
+    
+    Stage 流水线:
+    1. SamplerStage (异步): 生成 N 个 responses
+    2. VerifierStage (多线程): 验证每个 response
+    3. FormatterStage (同步): 输出 SFT 格式
+    
+    并发控制参数说明:
+    - stage_concurrency: 控制 Stage 的 Actor 数量 (多少个 batch 并发处理)
+    - semaphore_per_sampler: 控制单个 SamplerStage Actor 内部的并发请求数
+    - verifier_max_workers: 控制 VerifierStage batch 内有多少个 item 并发处理
+    """
+    
+    config_class = SFTConfig
+    
+    def __init__(self, config: SFTConfig):
+        super().__init__(config)
+    
+    def stages(self) -> list[Stage]:
+        """返回 Stage 列表 (按执行顺序)."""
+        return [
+            DataConverterStage(self.config),
+            SamplerStage(self.config),
+            VerifierStage(self.config),
+            FormatterStage(self.config),
+        ]
+
+if __name__ == "__main__":
+    import json
+    
+    config = SFTConfig.from_yaml("recipes/vl_cot_sft_plus/config.yaml")
+    data_converter_stage = DataConverterStage(config)
+    
+    # 原有的单元测试用例
+    test_cases = [
+        {
+            "id": 12583,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": "train/14311/image.png",
+                                "image_wh": [750, 429]
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": "<IMG_CONTEXT>\nThe following are multi-choice questions. Please give the correct answer directly.\n\nQuestion: What is the capital of Oregon?\nA. Salem\nB. Cheyenne\nC. Arlington\nD. Portland\nAnswer: "
+                        }
+                    ]
+                },
+                {
+                    "role": "assistant",
+                    "content": "A. Salem"
+                }
+            ],
+            "doc_loc": "s3://puyu3-users/shuffle_n_merge/P~Single_Image_Science_MCQ~en~scienceqa_multi_choice_en_20240402~1.0.0~0.0_Bo1MSIrxaL3Qo0DmpKiO/jsonl/part-68d4c4a0aff3-000086.jsonl?bytes=0,599"
+        },
+        {
+            "id": 10282,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": "train/6260/image.png",
+                                "image_wh": [705, 411]
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": "<IMG_CONTEXT>\nWhich of these continents does the prime meridian intersect?\nA. Europe\nB. North America\nC. South America\nAnswer with the option's letter from the given choices directly."
+                        }
+                    ]
+                },
+                {
+                    "role": "assistant",
+                    "content": "A"
+                }
+            ],
+            "doc_loc": "s3://puyu3-users/shuffle_n_merge/P~Single_Image_Science_MCQ~en~scienceqa_choice_aug_en_20240402~1.0.0~0.0_Bo1MQrDxaL3Qn0wQWGSV/jsonl/part-68d4c44d1ad9-000086.jsonl?bytes=0,576"
+        },
+        {
+            "id": 1857,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": "viquae/images/512px-Interior_of_Stratford_Market_Depot_on_the_Jubilee_Line.jpg",
+                                "image_wh": [512, 335]
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": "<IMG_CONTEXT>\nOn the map what is the colour of this rapid transit railway line?\nAnswer the question using a single word or phrase."
+                        }
+                    ]
+                },
+                {
+                    "role": "assistant",
+                    "content": "Silver"
+                }
+            ],
+            "doc_loc": "s3://puyu3-users/shuffle_n_merge/P~Single_Image_Knowledge_ShortQA~en~viquae_en_20240402~1.0.0~0.0_Bo1MUdXxaL3QqddxTNhR/jsonl/part-68d4c539ae1e-000086.jsonl?bytes=0,574"
+        },
+        {
+            "id": 5398,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": "ToMME/brightness/4_8429194888_8468743988_9471314459_9200093125.jpg",
+                                "image_wh": [1024, 768]
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": "<IMG_CONTEXT>\nWhich image is the brightest one?\nA. upper left\nB. upper right\nC. down left\nD. down right\nAnswer with the option's letter from the given choices directly."
+                        }
+                    ]
+                },
+                {
+                    "role": "assistant",
+                    "content": "C"
+                }
+            ],
+            "doc_loc": "s3://puyu3-users/shuffle_n_merge/P~Single_Image_Knowledge_MCQ~en~koniq10k_en_20240403~1.0.0~0.0_Bo1MVrXxaL3QrL7MvSJY/jsonl/part-68d4c584252f-000086.jsonl?bytes=0,598"
+        },
+        {
+            "id": -1,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": "liangjinwei/traditional_show/dance/google_22/000085_1273e2b6.png",
+                                "image_wh": [657, 371]
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": "<IMG_CONTEXT>\n图中所示传统舞蹈表演为？\nA. 基诺大鼓舞\nB. 木鼓舞\nC. 翼城花鼓\nD. 京西太平鼓\n请回答选项字母以及对应的选项内容。"
+                        }
+                    ]
+                },
+                {
+                    "role": "assistant",
+                    "content": "B. 木鼓舞"
+                }
+            ],
+            "doc_loc": "s3://puyu3-users/shuffle_n_merge/P~Single_Image_General_MCQ~en~ccbench_inhouse_part1_zh_20240401~1.0.0~0.0_Bo1LiVvxaL3QRY2rOLhO/jsonl/part-68d4b8afcdba-000086.jsonl?bytes=0,616"
+        },
+        {
+            "id": 33867,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Read the description of a trait.\nDamon is good at identifying fish.\n\nWhat information supports the conclusion that Damon acquired this trait?\nA. Damon was not born knowing how to identify different fish. He had to learn this skill.\nB. Damon has two pet fish. The fish live in a fish tank together.\nAnswer with the option's letter from the given choices directly."
+                },
+                {
+                    "role": "assistant",
+                    "content": "A"
+                }
+            ],
+            "doc_loc": "s3://puyu3-users/shuffle_n_merge/P~other~en~scienceqa_choice_augment_en_20240402~1.0.0~0.0_Bo1neffxaL3Q-y61IMdv/jsonl/part-68d677b6f47f-000086.jsonl?bytes=0,631"
+        },
+        {
+            "id": -1,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": "lishu/image_9_157_raxbrbiushuvcgldqslg.jpg",
+                                "image_wh": [1000, 1000]
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": "<IMG_CONTEXT>\n请问这张图展示的是哪种书法体？"
+                        }
+                    ]
+                },
+                {
+                    "role": "assistant",
+                    "content": "隶书"
+                }
+            ],
+            "doc_loc": "s3://puyu3-users/shuffle_n_merge/P~Document_QA~unknown~Calligraphy_Recognition_qa_d20241104_jsonl~1.0.0~0.0_Bo1f7-fxaL3SIMUBsVkn/jsonl/part-68d5ff1f93bf-000086.jsonl?bytes=0,476"
+        },
+        {
+            "id": 99999,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "What is the capital of France?"
+                        }
+                    ]
+                },
+                {
+                    "role": "assistant",
+                    "content": "Paris"
+                }
+            ],
+            "doc_loc": "s3://puyu3-users/shuffle_n_merge/P~Text_Only_QA~en~general_qa~1.0.0~0.0/jsonl/part-00000.jsonl?bytes=0,200"
+        }
+    ]
+    
+    print(f"\n{'='*80}")
+    print("运行原有单元测试用例")
+    print(f"{'='*80}\n")
+    
+    for i, test_input in enumerate(test_cases):
+        print(f"\n{'='*60}")
+        print(f"测试用例 {i+1}:")
+        print(f"{'='*60}")
+        try:
+            result = data_converter_stage.process_item(test_input)
+            print("转换结果:")
+            print(result)
+        except Exception as e:
+            import traceback
+            print(f"❌ 转换失败: {str(e)}\n{traceback.format_exc()}")
+    
+    # 新增：扫描 JSONL 文件并测试图像路径推断
+    test_jsonl_files = [
+        "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Document_QA~unknown~Calligraphy_Recognition_qa_d20241104_jsonl~1.0.0~0.0/jsonl/part-68d5ff1f93bf-000086.jsonl",
+        "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~en~scienceqa_choice_augment_en_20240402~1.0.0~0.0/jsonl/part-68d677b6f47f-000086.jsonl",
+        "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_General_MCQ~en~ccbench_inhouse_part1_zh_20240401~1.0.0~0.0/jsonl/part-68d4b8afcdba-000086.jsonl",
+        "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Knowledge_MCQ~en~koniq10k_en_20240403~1.0.0~0.0/jsonl/part-68d4c584252f-000086.jsonl",
+        "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Knowledge_ShortQA~en~viquae_en_20240402~1.0.0~0.0/jsonl/part-68d4c539ae1e-000086.jsonl",
+        "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Science_MCQ~en~scienceqa_choice_aug_en_20240402~1.0.0~0.0/jsonl/part-68d4c44d1ad9-000086.jsonl",
+        "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Science_MCQ~en~scienceqa_multi_choice_en_20240402~1.0.0~0.0/jsonl/part-68d4c4a0aff3-000086.jsonl",
+    ]
+    
+    print(f"\n\n{'='*80}")
+    print("开始扫描 JSONL 文件并测试图像路径推断")
+    print(f"{'='*80}\n")
+    
+    total_items = 0
+    total_with_images = 0
+    total_image_files_checked = 0
+    total_image_files_exist = 0
+    total_image_files_missing = 0
+    
+    for jsonl_file in test_jsonl_files:
+        print(f"\n{'='*80}")
+        print(f"处理文件: {jsonl_file}")
+        print(f"{'='*80}")
+        
+        if not os.path.exists(jsonl_file):
+            print(f"⚠️  文件不存在，跳过")
+            continue
+        
+        file_items = 0
+        file_with_images = 0
+        file_image_files_checked = 0
+        file_image_files_exist = 0
+        file_image_files_missing = 0
+        
+        with open(jsonl_file, 'r', encoding='utf-8') as f:
+            for line_num, line in enumerate(f, 1):
+                if not line.strip():
+                    continue
+                
+                try:
+                    item = json.loads(line)
+                    file_items += 1
+                    
+                    # 检查是否包含图像
+                    has_image = data_converter_stage._has_image_content(item)
+                    if has_image:
+                        file_with_images += 1
+                        
+                        # 推断图像路径
+                        try:
+                            image_base_path = data_converter_stage._get_image_path_for_item(item)
+                            print(f"\n  行 {line_num}: 推断图像路径 = {image_base_path}")
+                            
+                            # 检查图像文件是否存在
+                            for msg in item.get("messages", []):
+                                if msg.get("role") != "user":
+                                    continue
+                                
+                                content = msg.get("content", [])
+                                if isinstance(content, list):
+                                    for content_item in content:
+                                        if isinstance(content_item, dict) and content_item.get("type") == "image_url":
+                                            image_url_data = content_item.get("image_url", {})
+                                            relative_path = image_url_data.get("url", "")
+                                            full_path = os.path.join(image_base_path, relative_path)
+                                            
+                                            file_image_files_checked += 1
+                                            if os.path.exists(full_path):
+                                                file_image_files_exist += 1
+                                                print(f"    ✅ 图像存在: {relative_path}")
+                                            else:
+                                                file_image_files_missing += 1
+                                                print(f"    ❌ 图像缺失: {relative_path}")
+                                                print(f"       完整路径: {full_path}")
+                        
+                        except Exception as e:
+                            import traceback
+                            print(f"\n  行 {line_num}: ❌ 推断失败 - {str(e)}\n{traceback.format_exc()}")
+                
+                except json.JSONDecodeError as e:
+                    import traceback
+                    print(f"  行 {line_num}: JSON 解析错误 - {str(e)}\n{traceback.format_exc()}")
+                except Exception as e:
+                    import traceback
+                    print(f"  行 {line_num}: 处理错误 - {str(e)}\n{traceback.format_exc()}")
+        
+        print(f"\n文件统计:")
+        print(f"  总数据项: {file_items}")
+        print(f"  包含图像: {file_with_images}")
+        print(f"  检查图像文件: {file_image_files_checked}")
+        print(f"  图像存在: {file_image_files_exist}")
+        print(f"  图像缺失: {file_image_files_missing}")
+        
+        total_items += file_items
+        total_with_images += file_with_images
+        total_image_files_checked += file_image_files_checked
+        total_image_files_exist += file_image_files_exist
+        total_image_files_missing += file_image_files_missing
+    
+    print(f"\n{'='*80}")
+    print("总体统计:")
+    print(f"{'='*80}")
+    print(f"总数据项: {total_items}")
+    print(f"包含图像: {total_with_images}")
+    print(f"检查图像文件: {total_image_files_checked}")
+    print(f"图像存在: {total_image_files_exist} ({100*total_image_files_exist/total_image_files_checked:.1f}%)" if total_image_files_checked > 0 else "检查图像文件: 0")
+    print(f"图像缺失: {total_image_files_missing} ({100*total_image_files_missing/total_image_files_checked:.1f}%)" if total_image_files_checked > 0 else "图像缺失: 0")
