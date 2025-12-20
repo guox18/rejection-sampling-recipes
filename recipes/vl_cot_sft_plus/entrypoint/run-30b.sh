@@ -19,7 +19,7 @@ RECIPE_NAME="$(basename "$RECIPE_DIR")"
 
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
-export RECIPE_LOG_FILE="/tmp/logs/${RECIPE_NAME}_run_$(date +"%Y%m%d_%H%M%S").log"
+export RECIPE_LOG_FILE="/tmp/logs/${RECIPE_NAME}/run_$(date +"%Y%m%d_%H%M%S").log"
 mkdir -p $(dirname $RECIPE_LOG_FILE)
 
 # ============================================================
@@ -28,6 +28,7 @@ mkdir -p $(dirname $RECIPE_LOG_FILE)
 # 日志文件路径, 写到 tmp
 MODEL="qwen3_vl_30b_a3b_thinking" # 使用 vllm 启动的模型, 模型名应准确
 BASE_URL="http://100.102.249.23:21002/v1"
+SEMAPHORE_PER_SAMPLER=512
 JUDGE_MODEL="qwen25_32b_instruct"
 JUDGE_BASE_URL="http://100.102.249.23:21003/v1"
 # 配置文件路径
@@ -35,9 +36,10 @@ CONFIG_FILE="${RECIPE_DIR}/config.yaml"
 
 # 输入文件路径（支持多个文件，用空格分隔）
 INPUT_FILES=(
-    "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p0/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~unknown~shyc_mllm~1.0.0~0.0/jsonl/part-68d75a9610db-000086_abs.jsonl"
-    "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p0/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~unknown~kaoyan_mllm_by_doc_parse~2.0.0~0.0/jsonl/part-68dc4ada2601-000086_abs.jsonl"
-    "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p0/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Science_MCQ~en~ai2d_en_20240410~1.0.0~0.0/jsonl/part-68d4c4997fb1-000086_abs.jsonl"
+    # yj-p0
+    # "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p0/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~unknown~shyc_mllm~1.0.0~0.0/jsonl/part-68d75a9610db-000086_abs.jsonl"
+    # "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p0/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~unknown~kaoyan_mllm_by_doc_parse~2.0.0~0.0/jsonl/part-68dc4ada2601-000086_abs.jsonl"
+    # "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p0/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Science_MCQ~en~ai2d_en_20240410~1.0.0~0.0/jsonl/part-68d4c4997fb1-000086_abs.jsonl"
     "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p0/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Math_MCQ~en~tqa_en_20240402_sft_final~1.0.0~0.0/jsonl/part-68d3e0ca9187-000086_abs.jsonl"
 )
 
@@ -136,6 +138,7 @@ run_pipeline() {
 
     # 模型名字
     [ -n "$MODEL" ] && args+=(--model "$MODEL")
+    [ -n "$SEMAPHORE_PER_SAMPLER" ] && args+=(--semaphore-per-sampler "$SEMAPHORE_PER_SAMPLER")
     [ -n "$JUDGE_MODEL" ] && args+=(--judge-model "$JUDGE_MODEL")
     [ -n "$BASE_URL" ] && args+=(--base-url "$BASE_URL")
     [ -n "$JUDGE_BASE_URL" ] && args+=(--judge-base-url "$JUDGE_BASE_URL")

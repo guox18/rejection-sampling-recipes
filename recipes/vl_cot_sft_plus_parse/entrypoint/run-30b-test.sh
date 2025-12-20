@@ -19,33 +19,38 @@ RECIPE_NAME="$(basename "$RECIPE_DIR")"
 
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
-export RECIPE_LOG_FILE="/tmp/logs/${RECIPE_NAME}_run_$(date +"%Y%m%d_%H%M%S").log"
+export RECIPE_LOG_FILE="/tmp/logs/${RECIPE_NAME}/run_$(date +"%Y%m%d_%H%M%S").log"
 mkdir -p $(dirname $RECIPE_LOG_FILE)
 
 # ============================================================
 # 配置项 - 在此处修改参数
 # ============================================================
 # 日志文件路径, 写到 tmp
-MODEL="qwen3_vl_235b_a22b_thinking" # 使用 vllm 启动的模型, 模型名应准确
-JUDGE_MODEL="qwen"
+PARSE_MODEL="qwen25_32b_instruct"
+PARSE_BASE_URL="http://100.102.249.23:21003/v1"
+MODEL="qwen3_vl_30b_a3b_thinking" # 使用 vllm 启动的模型, 模型名应准确
+BASE_URL="http://100.102.249.23:21002/v1"
+SEMAPHORE_PER_SAMPLER=128
+JUDGE_MODEL="qwen25_32b_instruct"
+JUDGE_BASE_URL="http://100.102.249.23:21003/v1"
 # 配置文件路径
 CONFIG_FILE="${RECIPE_DIR}/config.yaml"
 
 # 输入文件路径（支持多个文件，用空格分隔）
 INPUT_FILES=(
-    # "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Knowledge_ShortQA~en~viquae_en_20240402~1.0.0~0.0/jsonl/test.jsonl"
-    "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Knowledge_ShortQA~en~viquae_en_20240402~1.0.0~0.0/jsonl/part-68d4c539ae1e-000086_abs_sft_abs.jsonl"
+    # test
+    "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Conversation_LongQA~zh~crawler_emoji_gpt4o_zh_20240628~1.0.0~0.0/jsonl/test_10.jsonl"
+
 )
 
 # 输出目录（自动创建 sft/YYYYMMDD_HHMMSS 格式的目录，用户也可以手动指定）
 # TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-# TIMESTAMP="20251217_120458"
 # OUTPUT_DIR="${PROJECT_ROOT}/data/Nemotron-Post-Training-Dataset-v2/datasets/more_sft/${TIMESTAMP}"
 
-# LATEST="--latest"                  # 设置为 "--latest" 从最新时间戳目录续传
+LATEST=""                  # 设置为 "--latest" 从最新时间戳目录续传
 # 输出文件后缀
-OUTPUT_SUFFIX="_sft"
-SFT_SUBDIR="sft1"              # SFT 输出子目录名称，默认为 "sft"
+OUTPUT_SUFFIX="_sft-30b-test"
+SFT_SUBDIR="sft-30b-test"              # SFT 输出子目录名称，默认为 "sft"
 
 # Pipeline 配置
 BATCH_SIZE=""              # 留空使用配置文件默认值
@@ -130,6 +135,13 @@ run_pipeline() {
         args+=(--input "${INPUT_FILES[@]}")
     fi
     
+
+    # 模型名字
+    [ -n "$MODEL" ] && args+=(--model "$MODEL")
+    [ -n "$JUDGE_MODEL" ] && args+=(--judge-model "$JUDGE_MODEL")
+    [ -n "$BASE_URL" ] && args+=(--base-url "$BASE_URL")
+    [ -n "$JUDGE_BASE_URL" ] && args+=(--judge-base-url "$JUDGE_BASE_URL")
+    [ -n "$SEMAPHORE_PER_SAMPLER" ] && args+=(--semaphore-per-sampler "$SEMAPHORE_PER_SAMPLER")
     # 添加输出目录
     [ -n "$OUTPUT_DIR" ] && args+=(--output-dir "$OUTPUT_DIR")
     [ -n "$OUTPUT_SUFFIX" ] && args+=(--output-suffix "$OUTPUT_SUFFIX")
@@ -149,7 +161,7 @@ run_pipeline() {
     [ -n "$NO_RESUME" ] && args+=("$NO_RESUME")
     [ -n "$NO_PRESERVE_ORDER" ] && args+=("$NO_PRESERVE_ORDER")
     
-    python -m recipes.vl_cot_sft_plus.entrypoint.run "${args[@]}"
+    python -m recipes.vl_cot_sft_plus_parse.entrypoint.run "${args[@]}"
 }
 
 # 主函数

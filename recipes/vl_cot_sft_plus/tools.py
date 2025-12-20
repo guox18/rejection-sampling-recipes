@@ -210,34 +210,69 @@ class AsyncOpenAIClient:
             url = f"{self.base_url}/chat/completions"
             
             # 重试逻辑
+            # 注意：413 错误（请求太长）不会在这里重试，而是立即抛出让上层处理（resize 图片）
             for attempt in range(self.max_retries):
                 try:
                     async with session.post(url, json=payload, headers=headers) as resp:
                         if resp.status == 200:
-                            # 检查响应的 Content-Type
+                            # 成功响应：解析 JSON
                             content_type = resp.headers.get('Content-Type', '')
                             
-                            # 尝试解析 JSON，处理错误的 Content-Type
                             try:
                                 data = await resp.json(content_type=None)  # 忽略 Content-Type 检查
+                                if attempt > 0:
+                                    logger.info(f"[AsyncOpenAIClient] Request succeeded after {attempt + 1} attempt(s)")
                                 return [choice["message"]["content"] for choice in data["choices"]]
                             except (ValueError, KeyError, aiohttp.ContentTypeError) as e:
-                                # 获取原始响应文本用于调试
                                 error_text = await resp.text()
                                 raise RuntimeError(
                                     f"Failed to parse API response. "
                                     f"Content-Type: {content_type}, "
                                     f"Response preview: {error_text[:500]}"
                                 ) from e
-                        else:
+                        
+                        elif resp.status == 413:
+                            # 413 错误：请求太长，立即抛出不重试（需要上层调整输入长度）
+                            import json
+
                             error_text = await resp.text()
-                            if attempt == self.max_retries - 1:
+                            messages_text_only = []
+                            for msg in messages:
+                                msg_copy = {"role": msg.get("role")}
+                                if "content" in msg:
+                                    content_copy = []
+                                    for item in msg["content"]:
+                                        if item.get("type") == "text":
+                                            content_copy.append({"type": "text", "text": item.get("text")})
+                                        # 跳过 image_url 字段
+                                    msg_copy["content"] = content_copy
+                                messages_text_only.append(msg_copy)
+                            raise RuntimeError(f"API error {resp.status}: {error_text}. messages_text_only: {json.dumps(messages_text_only, ensure_ascii=False)}")
+                        
+                        else:
+                            # 其他 HTTP 错误：重试
+                            error_text = await resp.text()
+                            if attempt < self.max_retries - 1:
+                                logger.warning(
+                                    f"[AsyncOpenAIClient] API error {resp.status} on attempt {attempt + 1}/{self.max_retries}, "
+                                    f"retrying in {2 ** attempt}s... Error: {error_text[:200]}"
+                                )
+                                await asyncio.sleep(2 ** attempt)
+                            else:
+                                logger.error(f"[AsyncOpenAIClient] API error {resp.status} after {self.max_retries} attempts")
                                 raise RuntimeError(f"API error {resp.status}: {error_text}")
-                            await asyncio.sleep(2 ** attempt)
+                
                 except aiohttp.ClientError as e:
-                    if attempt == self.max_retries - 1:
+                    # 连接错误（如 104 Connection reset）：重试
+                    if attempt < self.max_retries - 1:
+                        logger.warning(
+                            f"[AsyncOpenAIClient] Connection error on attempt {attempt + 1}/{self.max_retries}: {type(e).__name__}: {e}, "
+                            f"retrying in {2 ** attempt}s..."
+                        )
+                        await asyncio.sleep(2 ** attempt)
+                    else:
+                        logger.error(f"[AsyncOpenAIClient] Connection error after {self.max_retries} attempts: {type(e).__name__}: {e}")
                         raise
-                    await asyncio.sleep(2 ** attempt)
             
             return []
 

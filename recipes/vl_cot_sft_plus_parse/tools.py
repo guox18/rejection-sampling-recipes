@@ -10,7 +10,7 @@ import aiohttp
 logger = logging.getLogger(__name__)
 
 # ============================================================
-# LLM Judge Prompt Template
+# LLM Parse Prompt Template
 # ============================================================
 EXTRACT_ANSWER_TEMPLATE = """You are a helpful assistant tasked with extracting the final concise answer from a model's output.
 Please extract the `short_answer` based on the provided `question` and `answer`.
@@ -19,7 +19,7 @@ Extraction criteria:
 1. **Remove Reasoning:** Strip away all analysis, calculation steps, or chain-of-thought. We only need the final result.
 2. **Preserve Integrity:** Do not attempt to verify or correct the answer. Even if the reasoning logic appears flawed, extract the final conclusion exactly as stated.
 3. **Complex Formats:** If the final answer is a code block (e.g., Mermaid, Python), a JSON object, or a list, extract the entire block/object without modification.
-4. **Key Patterns:** Look for phrases like "The answer is...", "\\boxed{...}", or "Therefore...".
+4. **Key Patterns:** Look for phrases like "The answer is...", "\\boxed{{...}}", or "Therefore...".
 5. **Multiple Choice:** For selection questions, extract the chosen option (e.g., "A" or "Option C").
 
 Just return the extracted content, nothing else.
@@ -231,34 +231,57 @@ class AsyncOpenAIClient:
             url = f"{self.base_url}/chat/completions"
             
             # 重试逻辑
+            # 注意：413 错误（请求太长）不会在这里重试，而是立即抛出让上层处理（resize 图片）
             for attempt in range(self.max_retries):
                 try:
                     async with session.post(url, json=payload, headers=headers) as resp:
                         if resp.status == 200:
-                            # 检查响应的 Content-Type
+                            # 成功响应：解析 JSON
                             content_type = resp.headers.get('Content-Type', '')
                             
-                            # 尝试解析 JSON，处理错误的 Content-Type
                             try:
                                 data = await resp.json(content_type=None)  # 忽略 Content-Type 检查
+                                if attempt > 0:
+                                    logger.info(f"[AsyncOpenAIClient] Request succeeded after {attempt + 1} attempt(s)")
                                 return [choice["message"]["content"] for choice in data["choices"]]
                             except (ValueError, KeyError, aiohttp.ContentTypeError) as e:
-                                # 获取原始响应文本用于调试
                                 error_text = await resp.text()
                                 raise RuntimeError(
                                     f"Failed to parse API response. "
                                     f"Content-Type: {content_type}, "
                                     f"Response preview: {error_text[:500]}"
                                 ) from e
-                        else:
+                        
+                        elif resp.status == 413:
+                            # 413 错误：请求太长，立即抛出不重试（需要上层 resize 图片）
                             error_text = await resp.text()
-                            if attempt == self.max_retries - 1:
+                            logger.warning(f"[AsyncOpenAIClient] 413 error (request too large), needs input length adjustment: {error_text[:200]}")
+                            raise RuntimeError(f"API error {resp.status}: {error_text}")
+                        
+                        else:
+                            # 其他 HTTP 错误：重试
+                            error_text = await resp.text()
+                            if attempt < self.max_retries - 1:
+                                logger.warning(
+                                    f"[AsyncOpenAIClient] API error {resp.status} on attempt {attempt + 1}/{self.max_retries}, "
+                                    f"retrying in {2 ** attempt}s... Error: {error_text[:200]}"
+                                )
+                                await asyncio.sleep(2 ** attempt)
+                            else:
+                                logger.error(f"[AsyncOpenAIClient] API error {resp.status} after {self.max_retries} attempts")
                                 raise RuntimeError(f"API error {resp.status}: {error_text}")
-                            await asyncio.sleep(2 ** attempt)
+                
                 except aiohttp.ClientError as e:
-                    if attempt == self.max_retries - 1:
+                    # 连接错误（如 104 Connection reset）：重试
+                    if attempt < self.max_retries - 1:
+                        logger.warning(
+                            f"[AsyncOpenAIClient] Connection error on attempt {attempt + 1}/{self.max_retries}: {type(e).__name__}: {e}, "
+                            f"retrying in {2 ** attempt}s..."
+                        )
+                        await asyncio.sleep(2 ** attempt)
+                    else:
+                        logger.error(f"[AsyncOpenAIClient] Connection error after {self.max_retries} attempts: {type(e).__name__}: {e}")
                         raise
-                    await asyncio.sleep(2 ** attempt)
             
             return []
 

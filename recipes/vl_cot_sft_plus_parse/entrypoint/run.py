@@ -85,6 +85,14 @@ def parse_args() -> argparse.Namespace:
         help="采样模型名",
     )
 
+    parser.add_argument(
+        "--semaphore-per-sampler",
+        type=int,
+        default=None,
+        help="SamplerStage 并发度",
+    )
+
+
     
     # 数据路径
     parser.add_argument(

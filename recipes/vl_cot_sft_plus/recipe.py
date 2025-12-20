@@ -96,8 +96,16 @@ def resize_messages_images(messages: list[dict], max_pixels: int = None) -> list
         background.paste(image, mask=image.split()[3])
         return background.convert("RGB")
     
-    def process_base64_image(base64_str: str, max_pixels: int, patch_factor: int) -> str:
-        """处理 base64 编码的图片"""
+    def process_base64_image(base64_str: str, max_pixels: int, patch_factor: int, max_base64_kb: int = 800) -> str:
+        """
+        处理 base64 编码的图片，保证最终 base64 大小不超过指定值.
+        
+        Args:
+            base64_str: 原始 base64 字符串
+            max_pixels: 最大像素数（用于初始 resize）
+            patch_factor: patch 因子（必须是倍数）
+            max_base64_kb: 最大 base64 大小（KB），默认 800KB
+        """
         try:
             # 解析 base64 字符串
             if "base64," in base64_str:
@@ -113,25 +121,66 @@ def resize_messages_images(messages: list[dict], max_pixels: int = None) -> list
             # 转换为 RGB
             image = to_rgb(image_obj)
             width, height = image.size
+            original_size_mb = len(data) / (1024 * 1024)
             
             # 计算新的尺寸
             resized_height, resized_width = smart_resize(
                 height,
                 width,
                 factor=patch_factor,
-                min_pixels=28 * patch_factor ** 2,
+                min_pixels=4 * patch_factor ** 2,
                 max_pixels=max_pixels,
             )
             
             # Resize 图片
             resized_image = image.resize((resized_width, resized_height))
             
-            # 重新编码为 base64
-            buffer = BytesIO()
-            resized_image.save(buffer, format="PNG")
-            new_base64_data = base64.b64encode(buffer.getvalue()).decode()
+            # 动态调整 JPEG 质量，确保 base64 大小不超限
+            max_base64_bytes = max_base64_kb * 1024
+            quality = 85
+            attempts = 0
             
-            return f"{header}base64,{new_base64_data}"
+            while quality >= 20 and attempts < 10:
+                buffer = BytesIO()
+                resized_image.save(buffer, format="JPEG", quality=quality)
+                jpeg_bytes = buffer.getvalue()
+                
+                # Base64 编码后大小约为原始大小的 4/3
+                estimated_base64_size = len(jpeg_bytes) * 4 / 3
+                
+                if estimated_base64_size <= max_base64_bytes:
+                    # 满足大小要求
+                    jpeg_size_kb = len(jpeg_bytes) / 1024
+                    new_base64_data = base64.b64encode(jpeg_bytes).decode()
+                    base64_size_kb = len(new_base64_data) / 1024
+                    
+                    logger.info(
+                        f"[resize_image] {width}x{height} ({original_size_mb:.2f}MB) → "
+                        f"{resized_width}x{resized_height} quality={quality} "
+                        f"JPEG={jpeg_size_kb:.1f}KB base64={base64_size_kb:.1f}KB"
+                    )
+                    
+                    return f"data:image/jpeg;base64,{new_base64_data}"
+                
+                # 如果太大，降低质量重试
+                quality -= 10
+                attempts += 1
+            
+            # 如果质量降到很低仍然太大，最后一次尝试用 quality=20
+            buffer = BytesIO()
+            resized_image.save(buffer, format="JPEG", quality=20)
+            jpeg_bytes = buffer.getvalue()
+            jpeg_size_kb = len(jpeg_bytes) / 1024
+            new_base64_data = base64.b64encode(jpeg_bytes).decode()
+            base64_size_kb = len(new_base64_data) / 1024
+            
+            logger.warning(
+                f"[resize_image] Had to use very low quality: {width}x{height} → "
+                f"{resized_width}x{resized_height} quality=20 base64={base64_size_kb:.1f}KB"
+            )
+            
+            return f"data:image/jpeg;base64,{new_base64_data}"
+            
         except Exception as e:
             logger.warning(f"Failed to resize image: {e}, keeping original")
             return base64_str
@@ -296,7 +345,7 @@ class DataConverterStage(Stage):
         
         # 检查图像文件大小（避免过大的图像导致输出过长）
         file_size = os.path.getsize(full_path)
-        max_image_size = getattr(self.config, 'max_image_size_mb', 10) * 1024 * 1024  # 默认 10MB
+        max_image_size = getattr(self.config, 'max_image_size_mb', 10) * 1024 * 1024  
         if file_size > max_image_size:
             size_mb = file_size / (1024 * 1024)
             max_size_mb = max_image_size / (1024 * 1024)
@@ -412,11 +461,11 @@ class DataConverterStage(Stage):
         Raises:
             ValueError: 如果包含图像但绝对路径字段不存在
         """
-        # 1. 获取图片绝对路径（从配置的字段读取）
-        image_base_path = self._get_nested_value(item, self.abs_image_path_field)
         # 如果未使用 ground_truth, 则说明已经产生有效的输出.
         if item.get("metadata") is not None and item.get("metadata", {}).get("used_ground_truth") is False:
             return item
+        # 1. 获取图片绝对路径（从配置的字段读取）
+        image_base_path = self._get_nested_value(item, self.abs_image_path_field)
 
         result = {
             "id": item.get("id", "unknown"),
@@ -428,7 +477,7 @@ class DataConverterStage(Stage):
         
         # 3. 提取 assistant 的回答到 metadata
         # 如果 metadata 中已经有 answer，优先使用已有的
-        existing_answer = item.get("metadata", {}).get("answer")
+        existing_answer = (item.get("metadata") or {}).get("answer")
         if existing_answer:
             result["metadata"]["answer"] = existing_answer
         else:
@@ -500,11 +549,12 @@ class SamplerStage(Stage):
                 if item.get("metadata", {}).get("used_ground_truth") is False:
                     return item
                 
+                messages = item.get("messages", [])
+                item_id = item.get("id", "unknown")
+                
                 try:
-                    messages = item.get("messages", [])
-                    item_id = item.get("id", "unknown")
-                    
-                    # 调用 API
+                    # 第一次尝试：正常调用 API
+                    # 注意：tools.py 会自动处理除 413 外的所有错误重试
                     responses = await self.client.chat_completion(
                         session=session,
                         semaphore=semaphore,
@@ -515,23 +565,25 @@ class SamplerStage(Stage):
                         max_tokens=self.config.max_tokens,
                     )
                     logger.info(f"[SamplerStage] Item {item_id}: Generated {len(responses)} responses")
-                    
                     return {**item, "responses": responses}
+                
                 except Exception as e:
                     import traceback
-                    
-                    # 检查是否是 413 错误（请求体过长）
                     error_str = str(e)
-                    if "413" in error_str and "length limit exceeded" in error_str:
+                    
+                    # 只处理 413 错误（请求太长）：resize 图片后重试
+                    if "413" in error_str:
                         logger.warning(f"[SamplerStage] Item {item_id}: 413, resizing images and retrying...")
                         try:
-                            # 对图片进行 resize - 
+                            # 计算更激进的 resize 参数
                             patch_factor = int(14 * SPATIAL_MERGE_SIZE)
-                            aggressive_max_pixels = (IMAGE_MAX_TOKEN_NUM // 600) * patch_factor ** 2
+                            aggressive_max_pixels = (IMAGE_MAX_TOKEN_NUM // 2) * patch_factor ** 2
                             logger.info(f"[SamplerStage] Item {item_id}: Using aggressive resize with max_pixels={aggressive_max_pixels}")
+                            
+                            # Resize 图片
                             resized_messages = resize_messages_images(messages, max_pixels=aggressive_max_pixels)
                             
-                            # 重试一次
+                            # 重试一次（tools.py 仍会处理其他错误的重试）
                             responses = await self.client.chat_completion(
                                 session=session,
                                 semaphore=semaphore,
@@ -545,15 +597,17 @@ class SamplerStage(Stage):
                             
                             # 更新 item 中的 messages 为 resized 版本
                             return {**item, "messages": resized_messages, "responses": responses}
+                        
                         except Exception as retry_e:
-                            # 重试失败，记录完整的 traceback
+                            # Resize 后仍然失败
                             error_trace = traceback.format_exc()
-                            logger.error(f"[SamplerStage] ❌ Item {item_id} retry failed: {retry_e}\n{error_trace}")
-                            return {**item, "_failed": True, "_error": f"SamplerStage retry: {retry_e}", "_traceback": error_trace}
+                            logger.error(f"[SamplerStage] ❌ Item {item_id} failed after resizing: {retry_e}\n{error_trace}")
+                            return {**item, "_failed": True, "_error": f"SamplerStage (after resize): {retry_e}", "_traceback": error_trace}
+                    
                     else:
-                        # 其他错误，记录完整的 traceback
+                        # 其他错误（500, 104 等）已经在 tools.py 中重试过了，直接标记失败
                         error_trace = traceback.format_exc()
-                        logger.error(f"[SamplerStage] ❌ Item {item_id} failed: {e}\n{error_trace}")
+                        logger.error(f"[SamplerStage] ❌ Item {item_id} failed (already retried in client): {e}\n{error_trace}")
                         return {**item, "_failed": True, "_error": f"SamplerStage: {e}", "_traceback": error_trace}
             
             return await asyncio.gather(*[process_one(item) for item in batch])
@@ -803,7 +857,7 @@ class FormatterStage(Stage):
         """
         处理单个 item, 格式化为 SFT 训练数据.
         """
-        if item.get("metadata", {}).get("used_ground_truth") is False:
+        if (item.get("metadata") or {}).get("used_ground_truth") is False:
             logger.info(f"[FormatterStage] Item {item.get('id', 'unknown')}: Already has valid output, skipping")
             return item
         

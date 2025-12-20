@@ -19,7 +19,7 @@ RECIPE_NAME="$(basename "$RECIPE_DIR")"
 
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
-export RECIPE_LOG_FILE="/tmp/logs/${RECIPE_NAME}_run_$(date +"%Y%m%d_%H%M%S").log"
+export RECIPE_LOG_FILE="/tmp/logs/${RECIPE_NAME}/run_$(date +"%Y%m%d_%H%M%S").log"
 mkdir -p $(dirname $RECIPE_LOG_FILE)
 
 # ============================================================
@@ -30,6 +30,7 @@ PARSE_MODEL="qwen25_32b_instruct"
 PARSE_BASE_URL="http://100.102.249.23:21003/v1"
 MODEL="qwen3_vl_235b_a22b_thinking" # 使用 vllm 启动的模型, 模型名应准确
 BASE_URL="http://100.102.249.23:21001/v1"
+SEMAPHORE_PER_SAMPLER=32
 JUDGE_MODEL="qwen25_32b_instruct"
 JUDGE_BASE_URL="http://100.102.249.23:21003/v1"
 # 配置文件路径
@@ -146,6 +147,7 @@ run_pipeline() {
     [ -n "$JUDGE_MODEL" ] && args+=(--judge-model "$JUDGE_MODEL")
     [ -n "$BASE_URL" ] && args+=(--base-url "$BASE_URL")
     [ -n "$JUDGE_BASE_URL" ] && args+=(--judge-base-url "$JUDGE_BASE_URL")
+    [ -n "$SEMAPHORE_PER_SAMPLER" ] && args+=(--semaphore-per-sampler "$SEMAPHORE_PER_SAMPLER")
 
     # 添加输出目录
     [ -n "$OUTPUT_DIR" ] && args+=(--output-dir "$OUTPUT_DIR")
@@ -166,7 +168,7 @@ run_pipeline() {
     [ -n "$NO_RESUME" ] && args+=("$NO_RESUME")
     [ -n "$NO_PRESERVE_ORDER" ] && args+=("$NO_PRESERVE_ORDER")
     
-    python -m recipes.vl_cot_sft_plus.entrypoint.run "${args[@]}"
+    python -m recipes.vl_cot_sft_plus_parse.entrypoint.run "${args[@]}"
 }
 
 # 主函数

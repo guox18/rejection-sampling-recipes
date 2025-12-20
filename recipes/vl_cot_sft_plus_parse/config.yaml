@@ -17,9 +17,9 @@ semaphore_per_sampler: 64
 
 # 数据路径配置
 # abs_image_path_field: 图片绝对路径字段（支持嵌套，如 meta_info.abs_image_path 或 abs_path）
-# max_image_size_mb: 图像文件大小限制（MB），超过此大小的图像会被标记为 failed（默认 10MB）
+# max_image_size_mb: 图像文件大小限制（MB），超过此大小的图像会被标记为 failed（默认 20MB）
 abs_image_path_field: abs_path
-max_image_size_mb: 10.0
+max_image_size_mb: 20.0
 
 # LLM Judge 配置
 judge_model: qwen25_32b_instruct
