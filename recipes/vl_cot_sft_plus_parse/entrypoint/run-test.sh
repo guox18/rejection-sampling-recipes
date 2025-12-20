@@ -33,17 +33,8 @@ CONFIG_FILE="${RECIPE_DIR}/config.yaml"
 
 # 输入文件路径（支持多个文件，用空格分隔）
 INPUT_FILES=(
-    # "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Document_QA~unknown~Calligraphy_Recognition_qa_d20241104_jsonl~1.0.0~0.0/jsonl/part-68d5ff1f93bf-000086_abs.jsonl"
-    # "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Science_MCQ~en~scienceqa_multi_choice_en_20240402~1.0.0~0.0/jsonl/part-68d4c4a0aff3-000086_abs.jsonl"
-    # "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Science_MCQ~en~scienceqa_choice_aug_en_20240402~1.0.0~0.0/jsonl/part-68d4c44d1ad9-000086_abs.jsonl"
-
-    # "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Knowledge_ShortQA~en~viquae_en_20240402~1.0.0~0.0/jsonl/part-68d4c539ae1e-000086_abs.jsonl"
-    # "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Knowledge_MCQ~en~koniq10k_en_20240403~1.0.0~0.0/jsonl/part-68d4c584252f-000086_abs.jsonl"
-    # "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_General_MCQ~en~ccbench_inhouse_part1_zh_20240401~1.0.0~0.0/jsonl/part-68d4b8afcdba-000086_abs.jsonl"
-    # "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~en~scienceqa_choice_augment_en_20240402~1.0.0~0.0/jsonl/part-68d677b6f47f-000086_abs.jsonl"
-
-    ## debug
     # "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Knowledge_ShortQA~en~viquae_en_20240402~1.0.0~0.0/jsonl/test.jsonl"
+    "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Knowledge_ShortQA~en~viquae_en_20240402~1.0.0~0.0/jsonl/part-68d4c539ae1e-000086_abs_sft_abs.jsonl"
 )
 
 # 输出目录（自动创建 sft/YYYYMMDD_HHMMSS 格式的目录，用户也可以手动指定）
@@ -51,10 +42,10 @@ INPUT_FILES=(
 # TIMESTAMP="20251217_120458"
 # OUTPUT_DIR="${PROJECT_ROOT}/data/Nemotron-Post-Training-Dataset-v2/datasets/more_sft/${TIMESTAMP}"
 
-LATEST="--latest"                  # 设置为 "--latest" 从最新时间戳目录续传
+# LATEST="--latest"                  # 设置为 "--latest" 从最新时间戳目录续传
 # 输出文件后缀
-OUTPUT_SUFFIX="_sft-235b"
-SFT_SUBDIR="sft-235b"              # SFT 输出子目录名称，默认为 "sft"
+OUTPUT_SUFFIX="_sft"
+SFT_SUBDIR="sft1"              # SFT 输出子目录名称，默认为 "sft"
 
 # Pipeline 配置
 BATCH_SIZE=""              # 留空使用配置文件默认值
@@ -139,11 +130,6 @@ run_pipeline() {
         args+=(--input "${INPUT_FILES[@]}")
     fi
     
-
-    # 模型名字
-    [ -n "$MODEL" ] && args+=(--model "$MODEL")
-    [ -n "$JUDGE_MODEL" ] && args+=(--judge-model "$JUDGE_MODEL")
-
     # 添加输出目录
     [ -n "$OUTPUT_DIR" ] && args+=(--output-dir "$OUTPUT_DIR")
     [ -n "$OUTPUT_SUFFIX" ] && args+=(--output-suffix "$OUTPUT_SUFFIX")

@@ -40,7 +40,7 @@ from src.base import BaseRecipe, Stage
 from src.utils.qwen3_vl_util import smart_resize, SPATIAL_MERGE_SIZE, IMAGE_MAX_TOKEN_NUM
 
 from .config import SFTConfig
-from .tools import AsyncOpenAIClient, SyncOpenAIClient, DEFAULT_JUDGE_TEMPLATE, clip_thinking
+from .tools import AsyncOpenAIClient, SyncOpenAIClient, DEFAULT_JUDGE_TEMPLATE, clip_thinking, EXTRACT_ANSWER_TEMPLATE
 
 # 配置专门的 Recipe 日志 - 简洁格式，只输出到文件
 def _setup_recipe_logger():
@@ -463,6 +463,99 @@ class DataConverterStage(Stage):
         
         return result
 
+# ============================================================
+# 示例 2: 多线程模式 - 使用装饰器 
+# ============================================================
+
+@Stage.threaded_mode
+class ParseStage(Stage):
+    """
+    解析阶段: 解析答案. 
+    
+    通过条件: 只要 metadata.short_answer 字段存在, 就跳过
+    
+    输出: 
+        对 answer 进行解析, 得到 short_answer. 仅改变 verify 的行为, 不影响失败处理 (保留原始的 answer, 相对长一些)
+    
+    与后续管线: verify 使用 metadata.short_answer 来进行验证, 而非 metadata.answer
+    """
+    
+    def __init__(self, config: SFTConfig):
+        self.config = config
+        self.client: SyncOpenAIClient = None
+    
+    def initialize(self):
+        """
+        Actor 创建时调用一次, 设置线程池大小并初始化客户端.
+        
+        通过设置 self._thread_pool_size 指定线程池大小.
+        """
+        self._thread_pool_size = self.config.verifier_max_workers # 直接和 verifier 共用一组模型.
+        
+        # 初始化同步客户端
+        api_key = self.config.judge_api_key or self.config.api_key
+        base_url = self.config.judge_base_url or self.config.base_url
+        
+        self.client = SyncOpenAIClient(api_key=api_key, base_url=base_url)
+        self.client.initialize()
+    
+    def process_item(self, item: dict) -> dict:
+        """
+        处理单个 item, 为所有 responses 打分.
+        
+        框架保证:
+        - 自动用线程池并发处理 batch 内的 item (由 verifier_max_workers 控制)
+        - 自动捕获异常, 失败的 item 标记 _failed=True
+        - 失败的 item 会被框架自动跳过, 不会进入 process_item 方法
+        - 无需手动 try-catch
+        """
+        # 如果未使用 ground_truth, 则说明已经产生有效的输出.
+        if item.get("metadata", {}).get("used_ground_truth") is False:
+            return item
+        
+        # 如果已经有 short answer, 跳过
+        if item.get("metadata", {}).get("short_answer") is not None:
+            return item
+        
+        messages = item.get("messages", [])
+
+        # 提取问题 (支持多模态数据)
+        question = ""
+        if messages:
+            for msg in reversed(messages):
+                if msg.get("role") == "user":
+                    content = msg.get("content", "")
+                    # 如果 content 是 list (多模态), 提取 text 部分
+                    if isinstance(content, list):
+                        for content_item in content:
+                            if isinstance(content_item, dict) and content_item.get("type") == "text":
+                                question = content_item.get("text", "")
+                                break
+                    else:
+                        # 如果 content 是 string (纯文本)
+                        question = content
+                    break
+        
+        answer = item.get("metadata", {}).get("answer")
+        
+        prompt = EXTRACT_ANSWER_TEMPLATE.format(
+            question_text=question,
+            answer_text=answer
+        )
+        short_answer = self._call_parse(prompt)
+        item["metadata"]["short_answer"] = short_answer
+        return item
+
+    def _call_parse(self, prompt: str) -> str:
+        """调用 parse model."""
+        return self.parse_client.chat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            model=self.config.parse_model,
+            max_tokens=self.config.parse_max_tokens,
+            temperature=self.config.parse_temperature,
+        )
+
+
 # 自行实现
 class SamplerStage(Stage):
     """
@@ -637,6 +730,7 @@ class VerifierStage(Stage):
         # 返回结果（排除 responses 字段）
         result = {k: v for k, v in item.items() if k != "responses"}
         result["rollouts"] = rollouts
+
        
         # 确保 metadata 是字典而不是 None（防止下游 Stage 出错）
         if result.get("metadata") is None:
@@ -803,6 +897,7 @@ class FormatterStage(Stage):
         """
         处理单个 item, 格式化为 SFT 训练数据.
         """
+        # 如果未使用 ground_truth, 则说明已经产生有效的输出.
         if item.get("metadata", {}).get("used_ground_truth") is False:
             logger.info(f"[FormatterStage] Item {item.get('id', 'unknown')}: Already has valid output, skipping")
             return item

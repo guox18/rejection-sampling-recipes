@@ -12,6 +12,28 @@ logger = logging.getLogger(__name__)
 # ============================================================
 # LLM Judge Prompt Template
 # ============================================================
+EXTRACT_ANSWER_TEMPLATE = """You are a helpful assistant tasked with extracting the final concise answer from a model's output.
+Please extract the `short_answer` based on the provided `question` and `answer`.
+
+Extraction criteria:
+1. **Remove Reasoning:** Strip away all analysis, calculation steps, or chain-of-thought. We only need the final result.
+2. **Preserve Integrity:** Do not attempt to verify or correct the answer. Even if the reasoning logic appears flawed, extract the final conclusion exactly as stated.
+3. **Complex Formats:** If the final answer is a code block (e.g., Mermaid, Python), a JSON object, or a list, extract the entire block/object without modification.
+4. **Key Patterns:** Look for phrases like "The answer is...", "\\boxed{...}", or "Therefore...".
+5. **Multiple Choice:** For selection questions, extract the chosen option (e.g., "A" or "Option C").
+
+Just return the extracted content, nothing else.
+
+<Question>
+{question_text}
+</Question>
+
+<Model Answer>
+{answer_text}
+</Model Answer>
+
+Extracted Short Answer:"""
+
 
 DEFAULT_JUDGE_TEMPLATE = """You are a helpful assistant who evaluates the correctness of models' outputs.
 Please judge whether the candidate's answer matches the standard answer.
@@ -200,12 +222,11 @@ class AsyncOpenAIClient:
                 "temperature": temperature,
                 "max_tokens": max_tokens,
             }
-                       
+            
             # 记录请求大小（用于调试）
             payload_size = len(json_module.dumps(payload))
             if payload_size > 1_000_000:  # > 1MB
                 logger.warning(f"[AsyncOpenAIClient] Large payload: {payload_size / 1_000_000:.2f} MB")
-
             
             url = f"{self.base_url}/chat/completions"
             

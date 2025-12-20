@@ -59,8 +59,6 @@ def infer_image_base_path_from_doc_loc(doc_loc: str, image_base_dir: str) -> Opt
     # 格式: P~xxx~xxx~xxx~x.x.x~x.x
     pattern = r"(P~[^/]+?~\d+\.\d+\.\d+~\d+\.\d+)(?:_[^/]+)?/jsonl/"
     match = re.search(pattern, doc_loc)
-    print(f"match: {match}")
-    print(f"doc_loc: {doc_loc}")
     if not match:
         return None
 
@@ -414,16 +412,16 @@ def main():
     # 打印缺失图像详情
     if total_stats["missing_image_details"]:
         print(f"\n\n{'=' * 80}")
-        print("缺失图像详情（前 20 条）")
+        print("缺失图像详情（前 3 条）")
         print(f"{'=' * 80}")
-        for detail in total_stats["missing_image_details"][:20]:
+        for detail in total_stats["missing_image_details"][:3]:
             print(f"  行 {detail['line']}, ID {detail['item_id']}")
             print(f"    相对路径: {detail['relative_path']}")
             print(f"    完整路径: {detail['full_path']}")
             print()
 
-        if len(total_stats["missing_image_details"]) > 20:
-            print(f"  ... 还有 {len(total_stats['missing_image_details']) - 20} 条缺失记录")
+        if len(total_stats["missing_image_details"]) > 3:
+            print(f"  ... 还有 {len(total_stats['missing_image_details']) - 3} 条缺失记录")
 
     print(f"\n{'=' * 80}")
     print("✅ 预处理完成")

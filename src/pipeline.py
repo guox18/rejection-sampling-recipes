@@ -374,17 +374,12 @@ class Pipeline:
                         error_msg = item.get("_error") or "Unknown error"
                         item_id = item.get("id", "unknown")
                         resume_id = item.get("_resume_id", "unknown")
+                        traceback = item.get("_traceback", "unknown")
                         print(f"[Pipeline] ⚠️  Writing failed item to output:")
                         print(f"  - ID: {item_id}")
                         print(f"  - Resume ID: {resume_id}")
                         print(f"  - Error: {error_msg}")
-                        # 打印 item 的部分内容用于调试（避免输出过多）
-                        debug_info = {
-                            k: v
-                            for k, v in item.items()
-                            if k in ["id", "_resume_id", "_error", "_failed"]
-                        }
-                        print(f"  - Debug info: {debug_info}")
+                        print(f"  - Traceback: {traceback}")
                     else:
                         success_rows += 1
                     
@@ -395,6 +390,12 @@ class Pipeline:
                     if success_rows % self.flush_interval == 0:
                         f.flush()
                         os.fsync(f.fileno())  # 强制写入磁盘
+            except Exception as e:
+                import traceback
+                error_trace = traceback.format_exc()
+                print(f"[Pipeline] ❌ Error writing to output file: {e}")
+                print(f"  Traceback:\n{error_trace}")
+                print(f"  Item that caused the error: {item}")
             finally:
                 # 最后再刷新一次，确保所有数据都写入
                 f.flush()
