@@ -28,7 +28,7 @@ mkdir -p $(dirname $RECIPE_LOG_FILE)
 # 日志文件路径, 写到 tmp
 MODEL="qwen3_vl_235b_a22b_thinking" # 使用 vllm 启动的模型, 模型名应准确
 BASE_URL="http://100.102.249.23:21001/v1"
-SEMAPHORE_PER_SAMPLER=32
+SEMAPHORE_PER_SAMPLER=64
 JUDGE_MODEL="qwen25_32b_instruct"
 JUDGE_BASE_URL="http://100.102.249.23:21003/v1"
 # 配置文件路径
@@ -41,9 +41,14 @@ INPUT_FILES=(
     # "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Science_MCQ~en~scienceqa_choice_aug_en_20240402~1.0.0~0.0/jsonl/part-68d4c44d1ad9-000086_abs_sft_abs_abs.jsonl"
     # "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Knowledge_ShortQA~en~viquae_en_20240402~1.0.0~0.0/jsonl/part-68d4c539ae1e-000086_abs_sft_abs.jsonl"
     # "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Knowledge_MCQ~en~koniq10k_en_20240403~1.0.0~0.0/jsonl/part-68d4c584252f-000086_abs_sft_abs.jsonl"
-    "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_General_MCQ~en~ccbench_inhouse_part1_zh_20240401~1.0.0~0.0/jsonl/part-68d4b8afcdba-000086_abs_sft_abs.jsonl"
+    # "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_General_MCQ~en~ccbench_inhouse_part1_zh_20240401~1.0.0~0.0/jsonl/part-68d4b8afcdba-000086_abs_sft_abs.jsonl"
     # "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~en~scienceqa_choice_augment_en_20240402~1.0.0~0.0/jsonl/part-68d677b6f47f-000086_abs_sft_abs.jsonl"
     # "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Document_QA~unknown~Calligraphy_Recognition_qa_d20241104_jsonl~1.0.0~0.0/jsonl/part-68d5ff1f93bf-000086_abs_sft_abs.jsonl"
+
+    "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p0/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~unknown~kaoyan_mllm_by_doc_parse~2.0.0~0.0/jsonl/part-68dc4ada2601-000086_abs_sft-30b.jsonl"
+    "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p0/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~unknown~shyc_mllm~1.0.0~0.0/jsonl/part-68d75a9610db-000086_abs_sft-30b.jsonl"
+    "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p0/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Math_MCQ~en~tqa_en_20240402_sft_final~1.0.0~0.0/jsonl/part-68d3e0ca9187-000086_abs_sft-30b.jsonl"
+    "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p0/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Science_MCQ~en~ai2d_en_20240410~1.0.0~0.0/jsonl/part-68d4c4997fb1-000086_abs_sft-30b.jsonl"
 )
 
 # 输出目录（自动创建 sft/YYYYMMDD_HHMMSS 格式的目录，用户也可以手动指定）
@@ -79,7 +84,7 @@ export RAY_LOG_TO_STDERR=0
 export PYTHONWARNINGS=ignore
 export RAY_IGNORE_UNHANDLED_ERRORS=1
 export RAY_worker_register_timeout_seconds=30
-
+export RAY_DEFAULT_OBJECT_STORE_MEMORY_PROPORTION=0.8
 
 # 配置
 NODE_RANK=${NODE_RANK:-0}

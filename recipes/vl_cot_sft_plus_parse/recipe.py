@@ -175,7 +175,7 @@ def resize_messages_images(messages: list[dict], max_pixels: int = None) -> list
             base64_size_kb = len(new_base64_data) / 1024
             
             logger.warning(
-                f"[resize_image] Had to use very low quality: {width}x{height} → "
+                f"[resize_image] Had to use low quality: {width}x{height} → "
                 f"{resized_width}x{resized_height} quality=20 base64={base64_size_kb:.1f}KB"
             )
             
@@ -340,9 +340,9 @@ class DataConverterStage(Stage):
         full_path = os.path.join(image_base_path, relative_path)
         
         # 检查文件是否存在
-        if not os.path.exists(full_path):
+        if not os.path.isfile(full_path):
             raise FileNotFoundError(f"Image file not found: {full_path}")
-        
+
         # 检查图像文件大小（避免过大的图像导致输出过长）
         file_size = os.path.getsize(full_path)
         max_image_size = getattr(self.config, 'max_image_size_mb', 10) * 1024 * 1024  
@@ -594,7 +594,7 @@ class ParseStage(Stage):
         short_answer = self._call_parse(prompt)
         item["metadata"]["short_answer"] = short_answer
 
-        logger.info(f"[ParseStage] Item {item.get('id', 'unknown')}: Short answer: {short_answer}")
+        # logger.info(f"[ParseStage] Item {item.get('id', 'unknown')}: Short answer: {short_answer}")
         
         return item
 
@@ -632,7 +632,8 @@ class SamplerStage(Stage):
         处理一个 batch，在 batch 级别创建和管理 session.
         """
         # 创建 batch 级别的 session 和 semaphore
-        async with aiohttp.ClientSession() as session:
+        timeout = aiohttp.ClientTimeout(total=1800)  # 30分钟总超时
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             semaphore = asyncio.Semaphore(self.client.semaphore_size)
             
             # 并发处理 batch 内的所有 items

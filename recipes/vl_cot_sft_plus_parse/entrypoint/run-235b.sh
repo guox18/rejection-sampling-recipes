@@ -83,7 +83,7 @@ export RAY_LOG_TO_STDERR=0
 export PYTHONWARNINGS=ignore
 export RAY_IGNORE_UNHANDLED_ERRORS=1
 export RAY_worker_register_timeout_seconds=30
-
+export RAY_DEFAULT_OBJECT_STORE_MEMORY_PROPORTION=0.8
 
 # 配置
 NODE_RANK=${NODE_RANK:-0}

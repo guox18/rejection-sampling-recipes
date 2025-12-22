@@ -12,7 +12,7 @@ base_url: http://100.102.249.23:21001/v1
 api_key: dummy
 n_samples: 2
 temperature: 0.6
-max_tokens: 16384
+max_tokens: 10240
 semaphore_per_sampler: 64
 
 # 数据路径配置
@@ -36,7 +36,7 @@ pass_threshold: 1.0
 max_retries: 2
 
 # Pipeline 配置
-batch_size: 512  # 每个 batch 的数据量
+batch_size: 128  # 每个 batch 的数据量
 concurrency: 2  # 默认并发度(Stage 的 actor 数量)
-sampler_concurrency: 2  # SamplerStage 并发度
+sampler_concurrency: 10  # SamplerStage 并发度
 verifier_concurrency: 2  # VerifierStage 并发度

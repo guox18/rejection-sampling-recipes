@@ -29,8 +29,8 @@ mkdir -p $(dirname $RECIPE_LOG_FILE)
 PARSE_MODEL="qwen25_32b_instruct"
 PARSE_BASE_URL="http://100.102.249.23:21003/v1"
 MODEL="qwen3_vl_30b_a3b_thinking" # 使用 vllm 启动的模型, 模型名应准确
-BASE_URL="http://100.102.249.23:21002/v1"
-SEMAPHORE_PER_SAMPLER=128
+BASE_URL="http://10.102.215.79:8000/v1"
+SEMAPHORE_PER_SAMPLER=64
 JUDGE_MODEL="qwen25_32b_instruct"
 JUDGE_BASE_URL="http://100.102.249.23:21003/v1"
 # 配置文件路径

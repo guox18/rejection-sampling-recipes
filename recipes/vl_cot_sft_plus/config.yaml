@@ -18,8 +18,8 @@ base_url: http://100.102.249.23:21001/v1
 api_key: dummy
 n_samples: 2
 temperature: 0.6
-max_tokens: 16384
-semaphore_per_sampler: 32
+max_tokens: 12384
+semaphore_per_sampler: 64
 
 # 数据路径配置
 # abs_image_path_field: 图片绝对路径字段（支持嵌套，如 meta_info.abs_image_path 或 abs_path）

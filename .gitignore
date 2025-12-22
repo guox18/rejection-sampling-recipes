@@ -51,8 +51,6 @@ htmlcov/
 output/
 outputs/
 checkpoints/
-# 先不放启服务节点
-scripts/launch_serve
 *.jsonl
 !examples/*.jsonl
 !tests/mock/text.jsonl
