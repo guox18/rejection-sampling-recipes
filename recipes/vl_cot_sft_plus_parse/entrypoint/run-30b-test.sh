@@ -62,6 +62,10 @@ VERIFIER_CONCURRENCY=""    # 留空使用配置文件默认值
 NO_RESUME=""               # 设置为 "--no-resume" 禁用断点续传
 NO_PRESERVE_ORDER=""       # 设置为 "--no-preserve-order" 禁用顺序保持
 
+# 错误检测选项
+ERROR_DETECTION="--error-detection"  # 设置为 "--error-detection" 启用错误检测，留空则禁用
+ERROR_THRESHOLD=""         # InternalServerError 错误率阈值，留空使用默认值 0.5 (50%)
+
 # =========================== 以上为配置项 ============================
 
 # 激活虚拟环境(确保 Ray worker 使用正确的 Python)
@@ -160,6 +164,10 @@ run_pipeline() {
     [ -n "$LATEST" ] && args+=("$LATEST")
     [ -n "$NO_RESUME" ] && args+=("$NO_RESUME")
     [ -n "$NO_PRESERVE_ORDER" ] && args+=("$NO_PRESERVE_ORDER")
+    
+    # 添加错误检测选项
+    [ -n "$ERROR_DETECTION" ] && args+=("$ERROR_DETECTION")
+    [ -n "$ERROR_THRESHOLD" ] && args+=(--error-threshold "$ERROR_THRESHOLD")
     
     python -m recipes.vl_cot_sft_plus_parse.entrypoint.run "${args[@]}"
 }

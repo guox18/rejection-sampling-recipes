@@ -27,6 +27,12 @@ cd /mnt/shared-storage-user/songdemin/user/guoxu/public/rejection-sampling-recip
 #   /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Document_Chart_QA~en~xingce_zhenti_common_sense_v2~1.0.0~0.0/jsonl/part-68d603fd2b58-000086.jsonl \
 #   /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Chart_Markdown~unknown~synthChart_flowchart_md_v1_0_jsonl~1.0.0~0.0/jsonl/part-68d628a12d2e-000086.jsonl
 
+
+## 漏了一个
+uv run python /mnt/shared-storage-user/songdemin/user/guoxu/public/rejection-sampling-recipes/scripts/preprocess_images.py \
+  --image-base-dir /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219/intern-multi-modal-h-delivery/internvl_delivery/internvl3_5 \
+  -i /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~unknown~mmmu_wimg_test_subqa_33k_v1_20241127check~1.0.0~0.0/jsonl/part-68d5ed381400-000086.jsonl \
+
 # # sy p0
 # uv run python /mnt/shared-storage-user/songdemin/user/guoxu/public/rejection-sampling-recipes/scripts/preprocess_images.py \
 #   --image-base-dir /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p0/intern-multi-modal-h-delivery/internvl_delivery/internvl3_5 \
@@ -35,16 +41,16 @@ cd /mnt/shared-storage-user/songdemin/user/guoxu/public/rejection-sampling-recip
 #   /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p0/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Science_MCQ~en~ai2d_en_20240410~1.0.0~0.0/jsonl/part-68d4c4997fb1-000086.jsonl \
 #   /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p0/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Math_MCQ~en~tqa_en_20240402_sft_final~1.0.0~0.0/jsonl/part-68d3e0ca9187-000086.jsonl
 
-# sy p1
-uv run python /mnt/shared-storage-user/songdemin/user/guoxu/public/rejection-sampling-recipes/scripts/preprocess_images.py \
-  --image-base-dir /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p1/intern-multi-modal-h-delivery/internvl_delivery/internvl3_5 \
-  -i /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p1/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Science_CoT~en~ai2d_cot_gpt4o_en_20240805~1.0.0~0.0/jsonl/part-68d4c4421465-000086.jsonl \
-  /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p1/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Math_CoT~en~tqa_cot_gpt4o_en_20240621_final~1.0.0~0.0/jsonl/part-68d3e186a678-000086.jsonl \
-  /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p1/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Science~unknown~mmmu_tiku_gpt4o_20240626_18k_filtered_valid16k_20240816_v1~1.0.0~0.0/jsonl/part-68d5e794d66d-000086.jsonl \
-  /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p1/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~unknown~MSEarth_num7667160_20250621~3.0.0~0.0/jsonl/part-68e87f0f1440-000186.jsonl \
-  /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p1/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~unknown~MSEarth_num7667160_20250621~3.0.0~0.0/jsonl/part-68e87f0f1440-000057.jsonl \
-  /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p1/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~unknown~high_school_mllm_choice_4~1.0.0~0.0/jsonl/part-68d7cbca21fd-000086.jsonl \
-  /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p1/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~unknown~high_school_mllm_choice_3~1.0.0~0.0/jsonl/part-68d7cbd81b75-000086.jsonl \
-  /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p1/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~unknown~high_school_mllm_choice_2~1.0.0~0.0/jsonl/part-68d7cc9feef7-000086.jsonl
+# # sy p1
+# uv run python /mnt/shared-storage-user/songdemin/user/guoxu/public/rejection-sampling-recipes/scripts/preprocess_images.py \
+#   --image-base-dir /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p1/intern-multi-modal-h-delivery/internvl_delivery/internvl3_5 \
+#   -i /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p1/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Science_CoT~en~ai2d_cot_gpt4o_en_20240805~1.0.0~0.0/jsonl/part-68d4c4421465-000086.jsonl \
+#   /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p1/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Math_CoT~en~tqa_cot_gpt4o_en_20240621_final~1.0.0~0.0/jsonl/part-68d3e186a678-000086.jsonl \
+#   /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p1/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Science~unknown~mmmu_tiku_gpt4o_20240626_18k_filtered_valid16k_20240816_v1~1.0.0~0.0/jsonl/part-68d5e794d66d-000086.jsonl \
+#   /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p1/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~unknown~MSEarth_num7667160_20250621~3.0.0~0.0/jsonl/part-68e87f0f1440-000186.jsonl \
+#   /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p1/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~unknown~MSEarth_num7667160_20250621~3.0.0~0.0/jsonl/part-68e87f0f1440-000057.jsonl \
+#   /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p1/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~unknown~high_school_mllm_choice_4~1.0.0~0.0/jsonl/part-68d7cbca21fd-000086.jsonl \
+#   /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p1/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~unknown~high_school_mllm_choice_3~1.0.0~0.0/jsonl/part-68d7cbd81b75-000086.jsonl \
+#   /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p1/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~unknown~high_school_mllm_choice_2~1.0.0~0.0/jsonl/part-68d7cc9feef7-000086.jsonl
 
 

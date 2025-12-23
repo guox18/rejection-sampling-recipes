@@ -37,6 +37,7 @@ os.environ.setdefault("RAY_LOG_TO_STDERR", "0")
 os.environ.setdefault("PYTHONWARNINGS", "ignore")  # 屏蔽 Python 警告
 
 import argparse
+import json
 import sys
 
 # 使用相对引用，python -m 启动时工作目录已在项目根目录
@@ -189,6 +190,19 @@ def parse_args() -> argparse.Namespace:
         help="禁用顺序保持, 可提高性能但输出顺序可能不一致",
     )
     
+    # 错误检测选项
+    parser.add_argument(
+        "--error-detection",
+        action="store_true",
+        help="启用错误检测机制，当 InternalServerError 错误率过高时自动停止",
+    )
+    parser.add_argument(
+        "--error-threshold",
+        type=float,
+        default=0.5,
+        help="InternalServerError 错误率阈值 (0.0-1.0)，默认 0.5 (50%%)",
+    )
+    
     return parser.parse_args()
 
 
@@ -272,6 +286,60 @@ def generate_output_path(input_path: str, output_dir: str, suffix: str) -> str:
     output_filename = f"{name_without_ext}{suffix}.jsonl"
     
     return os.path.join(output_dir, output_filename)
+
+
+def check_internal_server_errors(output_file: str, error_threshold: float) -> tuple[bool, int, int, int]:
+    """
+    检查输出文件中的 InternalServerError 错误率.
+    
+    遍历输出文件，统计包含 InternalServerError 的错误数量。
+    如果错误率超过阈值，返回 True 表示应该停止处理。
+    
+    Args:
+        output_file: 输出文件路径
+        error_threshold: InternalServerError 错误率阈值 (0.0-1.0)
+    
+    Returns:
+        (should_stop, total_items, failed_items, internal_server_errors)
+        - should_stop: 是否应该停止处理
+        - total_items: 总数据条数
+        - failed_items: 失败的数据条数（所有错误）
+        - internal_server_errors: InternalServerError 错误数量
+    """
+    if not os.path.exists(output_file):
+        return False, 0, 0, 0
+    
+    total_items = 0
+    failed_items = 0
+    internal_server_errors = 0
+    
+    with open(output_file, 'r') as f:
+        for line in f:
+            if line.strip():
+                try:
+                    item = json.loads(line)
+                    total_items += 1
+                    
+                    # 检查是否失败
+                    if item.get('_failed') is True:
+                        failed_items += 1
+                        
+                        # 检查 traceback 中是否包含 InternalServerError
+                        traceback_str = ( item.get('_traceback') or '')
+                        if 'InternalServerError' in traceback_str:
+                            internal_server_errors += 1
+                            
+                except json.JSONDecodeError:
+                    continue
+    
+    if total_items == 0:
+        return False, 0, 0, 0
+    
+    # 计算 InternalServerError 错误率
+    error_rate = internal_server_errors / total_items
+    should_stop = error_rate > error_threshold
+    
+    return should_stop, total_items, failed_items, internal_server_errors
 
 
 def main():
@@ -413,6 +481,31 @@ def main():
         try:
             pipeline.run(input_file, output_file)
             total_success += 1
+            
+            # 错误检测：检查 InternalServerError 错误率
+            if args.error_detection:
+                should_stop, total, failed, internal_errors = check_internal_server_errors(
+                    output_file, args.error_threshold
+                )
+                
+                if total > 0:
+                    error_rate = internal_errors / total
+                    print(f"\n🔍 Error Detection:")
+                    print(f"  Total items:           {total}")
+                    print(f"  Failed items:          {failed}")
+                    print(f"  InternalServerError:   {internal_errors}")
+                    print(f"  Error rate:            {error_rate:.2%}")
+                    print(f"  Threshold:             {args.error_threshold:.2%}")
+                    
+                    if should_stop:
+                        print(f"\n⚠️  WARNING: InternalServerError 错误率过高！")
+                        print(f"  错误率 {error_rate:.2%} 超过阈值 {args.error_threshold:.2%}")
+                        print(f"  这可能表示远程服务已关闭或出现严重问题")
+                        print(f"  自动停止处理，避免产生大量失败数据")
+                        print(f"  已处理文件数: {i}/{len(input_files)}")
+                        print(f"  输出目录: {os.path.dirname(output_file)}")
+                        sys.exit(1)
+                
         except Exception as e:
             print(f"❌ Failed to process {input_file}: {e}")
             total_failed += 1
