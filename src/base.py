@@ -22,18 +22,13 @@ class Stage(ABC):
       框架会基于 _resume_id 恢复框架字段；如果返回 item 缺失 _resume_id，
       将自动基于内容哈希生成（用于断点续传与去重）。
 
-    装饰器:
-    - @Stage.async_mode: 异步并发执行 batch 内的 item
+    并发模式:
+    - 默认同步执行
     - @Stage.threaded_mode: 多线程并发执行 batch 内的 item
+    - 如需异步执行，请自行覆盖 process() 为 async def，并在其中管理所需资源
     """
 
     _execution_mode = "sync"
-
-    @classmethod
-    def async_mode(cls, stage_class):
-        """异步模式: 框架用 asyncio.gather 并发执行 batch 内的 item."""
-        stage_class._execution_mode = "async"
-        return stage_class
 
     @classmethod
     def threaded_mode(cls, stage_class):
@@ -58,12 +53,10 @@ class Stage(ABC):
         """
         处理一个 batch (默认实现: 自动调用 process_item, 自动异常处理).
 
-        可覆盖此方法以完全控制批处理逻辑 (如共享资源、batch inference).
+        可覆盖此方法以完全控制批处理逻辑 (如共享资源、batch inference、异步执行).
         """
         mode = self._execution_mode
-        if mode == "async":
-            return self._default_async_process(batch)
-        elif mode == "threaded":
+        if mode == "threaded":
             return self._default_threaded_process(batch)
         else:
             return self._default_sync_process(batch)
@@ -126,37 +119,6 @@ class Stage(ABC):
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             return list(executor.map(safe_process_one, batch))
 
-    async def _default_async_process(self, batch: list[dict]) -> list[dict]:
-        """异步模式: 用 asyncio.gather 并发处理 batch 内的 item."""
-        is_async = asyncio.iscoroutinefunction(self.process_item)
-
-        async def safe_process_one(item):
-            # 只有当 _failed 明确为 True 时才跳过（避免 NaN 或 None 导致误判）
-            if item.get("_failed") is True:
-                return item
-            try:
-                if is_async:
-                    result = await self.process_item(item)
-                else:
-                    loop = asyncio.get_event_loop()
-                    result = await loop.run_in_executor(None, self.process_item, item)
-                return result
-            except Exception as e:
-                import traceback
-
-                error_trace = traceback.format_exc()
-                logger.error(
-                    f"[{type(self).__name__}] ❌ Item {item.get('id', 'unknown')} failed: {e}\n{error_trace}"
-                )
-                return {
-                    **item,
-                    "_failed": True,
-                    "_error": f"{type(self).__name__}: {e}",
-                    "_traceback": error_trace,
-                }
-
-        return await asyncio.gather(*[safe_process_one(item) for item in batch])
-
     def process_item(self, item: dict) -> Union[dict, "asyncio.coroutine"]:
         """处理单个 item (子类实现). 框架自动异常处理, 无需 try-catch."""
         raise NotImplementedError(
@@ -167,7 +129,7 @@ class Stage(ABC):
         """检查是否需要异步执行."""
         if type(self).process != Stage.process:
             return asyncio.iscoroutinefunction(self.process)
-        return self._execution_mode == "async"
+        return False
 
 
 class BaseRecipe(ABC):

@@ -47,7 +47,7 @@ INPUT_FILES=(
 # TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 # OUTPUT_DIR="${PROJECT_ROOT}/data/Nemotron-Post-Training-Dataset-v2/datasets/more_sft/${TIMESTAMP}"
 
-LATEST="--latest"                  # 设置为 "--latest" 从最新时间戳目录续传
+LATEST=""                  # 设置为 "--latest" 从最新时间戳目录续传
 # 输出文件后缀
 OUTPUT_SUFFIX="_sft-30b-test"
 SFT_SUBDIR="sft-30b-test"              # SFT 输出子目录名称，默认为 "sft"

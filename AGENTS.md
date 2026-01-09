@@ -22,10 +22,10 @@ This AGENTS.md file provides guidance for code agents working with this codebase
 ### Stage
 A `Stage` is a single processing step in the pipeline. Stages inherit from the `Stage` base class and implement `process_item(item: dict) -> dict`.
 
-**Three execution modes:**
+**Execution modes:**
 - **Sync mode** (default): Sequential processing
-- **Async mode** (`@Stage.async_mode`): Concurrent processing with asyncio
 - **Threaded mode** (`@Stage.threaded_mode`): Concurrent processing with thread pool
+- **Custom async**: Implement `async def process()` yourself when you need asyncio semantics
 
 ### Recipe
 A `Recipe` defines a sequence of stages. Recipes inherit from `BaseRecipe` and implement `stages() -> list[Stage]`.
@@ -37,7 +37,8 @@ The pipeline engine executes recipes on datasets with features like batching, er
 
 - Keep each recipe self-contained in its own directory with `recipe.py`, `config.py`, `tools.py`
 - Implement stages by inheriting from `Stage` and implementing `process_item()`
-- Use decorators `@Stage.async_mode` or `@Stage.threaded_mode` for concurrent processing
+- Use `@Stage.threaded_mode` for thread-pool concurrency; implement an async `process()` when you
+  need asyncio.
 - Never modify framework internal fields: `_resume_id`, `_failed`, `_error`, `_traceback`
 - Follow the existing project structure when adding new recipes
 
@@ -59,4 +60,3 @@ When adding a new recipe:
 - Line length: 100 characters
 - Run `ruff format .` to format code
 - Run `ruff check .` to check for issues
-

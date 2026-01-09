@@ -1,17 +1,18 @@
 """
 SFT Recipe: 采样 → 验证 → 格式化.
 
-Stage 支持三种执行模式:
+Stage 支持两种内置执行模式:
 - 同步模式: 顺序执行 (默认)
-- 异步模式: asyncio 并发执行 (@Stage.async_mode)
 - 多线程模式: 线程池并发执行 (@Stage.threaded_mode)
+
+如需 asyncio 并发，请自行实现 `async def process()`。
 
 Stage 支持两种实现方式:
 - 只实现 process_item(): 框架自动批处理和异常处理 (推荐)
 - 覆盖 process(): 完全自定义批处理 (高级)
 
 本文件示例:
-- SamplerStage: 异步 + process_item + AsyncOpenAIClient (API 调用)
+- SamplerStage: 自定义 async process + AsyncOpenAIClient (API 调用)
 - VerifierStage: 多线程 + process_item + SyncOpenAIClient (LLM Judge)
 - FormatterStage: 同步 + process_item (数据格式化)
 
