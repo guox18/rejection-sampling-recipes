@@ -13,7 +13,7 @@ from ray.data import ActorPoolStrategy, TaskPoolStrategy
 
 from .base import BaseRecipe, Stage
 from .utils.data_io import convert_to_python_types, convert_scalar_to_python
-from .utils.framework import FRAMEWORK_FIELDS
+from .utils.framework import FRAMEWORK_FIELDS, remove_framework_fields
 
 
 def clean_nan_values(item: dict, warn: bool = True) -> dict:
@@ -468,6 +468,7 @@ class Pipeline:
         - 异常捕获和 _failed 标记
         """
         is_async = stage.is_async()
+        pipeline_self = self
 
         class StageCallable:
             """封装 Stage 为 Ray Data 可调用对象."""
@@ -502,10 +503,12 @@ class Pipeline:
                 rows = df.to_dict("records")
                 rows = [convert_to_python_types(row) for row in rows]
 
-                # 保存每个 item 的框架字段
-                framework_data = {}
-                for idx, item in enumerate(rows):
-                    framework_data[idx] = {k: item.get(k) for k in FRAMEWORK_FIELDS}
+                # 保存每个 item 的框架字段（按 _resume_id 映射）
+                framework_data_by_id = {}
+                for item in rows:
+                    resume_id = item.get("_resume_id")
+                    if resume_id is not None:
+                        framework_data_by_id[resume_id] = {k: item.get(k) for k in FRAMEWORK_FIELDS}
 
                 # 处理所有 item（包括失败的），由 Stage 内部决定是否跳过失败的 item
                 if rows:
@@ -517,19 +520,6 @@ class Pipeline:
                             # 同步模式
                             results = self._stage.process(rows)
 
-                        # 自动恢复框架字段到处理结果中
-                        for idx, result in enumerate(results):
-                            saved_fields = framework_data[idx]
-
-                            # 恢复框架字段：如果 saved_fields 中的值不是 None，
-                            # 且 result 中的值是 None，则恢复 saved_fields 中的值
-                            # 这样可以防止 Stage 通过复制 item 时意外覆盖框架字段
-                            for field, value in saved_fields.items():
-                                if value is not None:
-                                    # 如果字段不存在，或者存在但值为 None，则恢复
-                                    if field not in result or result[field] is None:
-                                        result[field] = value
-
                     except Exception as e:
                         # 失败处理兜底, 标记所有 item 为失败.
                         import traceback
@@ -540,13 +530,11 @@ class Pipeline:
                         print(f"  Error: {safe_str(e, max_length=500)}")
                         print(f"  Traceback:\n{safe_str(error_trace, max_length=2000)}")
                         results = []
-                        for idx, item in enumerate(rows):
-                            saved_fields = framework_data[idx]
+                        for item in rows:
                             # 保留原有的框架字段，添加失败标记
                             # 限制 error 和 traceback 的长度，避免过大的数据
                             result = {
                                 **item,
-                                **saved_fields,  # 恢复框架字段
                                 "_failed": True,
                                 "_error": safe_str(f"{stage_name}: {str(e)}", max_length=1000),
                                 "_traceback": safe_str(error_trace, max_length=5000),
@@ -557,6 +545,49 @@ class Pipeline:
 
                 # 所有结果
                 all_results = results
+
+                # 允许 Stage 过滤/扩增/重排数据：按 _resume_id 恢复框架字段
+                if all_results:
+                    normalized_results = []
+                    seen_resume_ids = set()
+                    for result in all_results:
+                        if not isinstance(result, dict):
+                            raise ValueError(
+                                f"[{type(self._stage).__name__}] Stage must return list[dict], "
+                                f"got item type: {type(result)}"
+                            )
+
+                        resume_id = result.get("_resume_id")
+                        if resume_id is None:
+                            # 新增 item 或丢失 _resume_id：自动生成（基于内容哈希）
+                            clean_item = remove_framework_fields(result)
+                            resume_id = pipeline_self._compute_resume_id(clean_item)
+                            result["_resume_id"] = resume_id
+
+                        saved_fields = framework_data_by_id.get(resume_id)
+                        if saved_fields:
+                            # 恢复框架字段：如果 saved_fields 中的值不是 None，
+                            # 且 result 中的值是 None，则恢复 saved_fields 中的值
+                            for field, value in saved_fields.items():
+                                if value is not None:
+                                    if field not in result or result[field] is None:
+                                        result[field] = value
+
+                        # 确保所有框架字段存在，避免 pandas 填充 NaN
+                        for field in FRAMEWORK_FIELDS:
+                            if field not in result:
+                                result[field] = None
+
+                        if resume_id in seen_resume_ids:
+                            print(
+                                f"[Warning] Duplicate _resume_id detected in stage output: {resume_id}. "
+                                f"Resume may treat these as duplicates."
+                            )
+                        seen_resume_ids.add(resume_id)
+
+                        normalized_results.append(result)
+
+                    all_results = normalized_results
 
                 # 转回 DataFrame
                 if not all_results:

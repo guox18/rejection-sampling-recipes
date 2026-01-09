@@ -10,7 +10,7 @@ uv sync
 
 ## Core Concepts
 
-- **Stage**: A single processing step (e.g., sampling, verification, formatting). Implement `process_item(item: dict) -> dict` for automatic batching, or override `process(batch: list[dict]) -> list[dict]` for custom batch processing.
+- **Stage**: A single processing step (e.g., sampling, verification, formatting). Implement `process_item(item: dict) -> dict` for automatic batching, or override `process(batch: list[dict]) -> list[dict]` for custom batch processing. Stages may filter/expand/reorder items; the pipeline restores framework fields based on `_resume_id`.
 - **Recipe**: A sequence of stages that defines a complete data processing workflow.
 - **Pipeline**: The execution engine that runs recipes with batching, error handling, and checkpoint/resume.
 
@@ -49,4 +49,3 @@ pipeline.run()
 ## License
 
 MIT
-

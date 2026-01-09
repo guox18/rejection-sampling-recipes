@@ -15,6 +15,15 @@ TEST_DATA_DIR = PROJECT_ROOT / "data" / "Nemotron-Post-Training-Dataset-v2" / "d
 TEST_DATA_FILE = TEST_DATA_DIR / "train_30.jsonl"
 
 
+@pytest.fixture(autouse=True)
+def _force_local_ray(monkeypatch):
+    """测试时强制使用本地 Ray，避免连接已有集群导致版本冲突."""
+    monkeypatch.setenv("RAY_ADDRESS", "local")
+    monkeypatch.delenv("RAY_ADDRESS_ENV", raising=False)
+    monkeypatch.delenv("RAY_HEAD_IP", raising=False)
+    monkeypatch.delenv("RAY_HEAD_ADDRESS", raising=False)
+
+
 @pytest.fixture
 def test_data_path():
     """返回测试数据文件路径."""

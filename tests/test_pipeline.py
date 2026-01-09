@@ -2,12 +2,34 @@
 
 import json
 import tempfile
+import os
 from pathlib import Path
 
 import pytest
+import ray
 
 from src.base import BaseRecipe, Stage
 from src.pipeline import Pipeline
+from src.utils.framework import remove_framework_fields
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _ray_local():
+    """在测试模块中启动本地 Ray；失败则跳过该模块的测试。"""
+    os.environ.setdefault("RAY_ADDRESS", "local")
+    os.environ.setdefault("RAY_DISABLE_DOCKER_CPU_WARNING", "1")
+    os.environ.setdefault("RAY_raylet_start_wait_time_s", "5")
+
+    try:
+        if not ray.is_initialized():
+            ray.init(address="local", include_dashboard=False, log_to_driver=False)
+    except Exception as exc:
+        pytest.skip(f"Ray local init failed in test environment: {exc}")
+
+    yield
+
+    if ray.is_initialized():
+        ray.shutdown()
 
 
 # ============================================================
@@ -33,6 +55,20 @@ class AddFieldStage(Stage):
         return [{**item, self.field_name: self.field_value} for item in batch]
 
 
+class ExpandStage(Stage):
+    """扩增数据的 Stage（每条输入生成一条新增数据）。"""
+
+    def process(self, batch):
+        expanded = []
+        for item in batch:
+            expanded.append(item)
+            new_item = remove_framework_fields(item)
+            new_item["id"] = f"{item.get('id')}-aug"
+            new_item["augmented"] = True
+            expanded.append(new_item)
+        return expanded
+
+
 # ============================================================
 # Test Recipes
 # ============================================================
@@ -54,6 +90,13 @@ class MultiStageRecipe(BaseRecipe):
             AddFieldStage("stage2", "done"),
             AddFieldStage("stage3", "done"),
         ]
+
+
+class ExpandRecipe(BaseRecipe):
+    """扩增数据的测试 Recipe."""
+
+    def stages(self):
+        return [ExpandStage()]
 
 
 # ============================================================
@@ -174,6 +217,35 @@ class TestPipelineRun:
             assert item.get("stage1") == "done"
             assert item.get("stage2") == "done"
             assert item.get("stage3") == "done"
+
+    def test_expand_stage_run(self, temp_files):
+        """Stage 允许扩增数据."""
+        input_path, output_path = temp_files
+
+        test_data = [
+            {"id": "1", "value": "a"},
+            {"id": "2", "value": "b"},
+        ]
+        with open(input_path, "w") as f:
+            for item in test_data:
+                f.write(json.dumps(item) + "\n")
+
+        recipe = ExpandRecipe(config={})
+        pipeline = Pipeline(
+            recipe=recipe,
+            batch_size=2,
+            concurrency=1,
+            resume=False,
+        )
+        pipeline.run(str(input_path), str(output_path))
+
+        with open(output_path) as f:
+            output_data = [json.loads(line) for line in f]
+
+        assert len(output_data) == 4
+        resume_ids = [item.get("_resume_id") for item in output_data]
+        assert all(resume_ids)
+        assert len(set(resume_ids)) == 4
 
 
 class TestPipelineHelpers:

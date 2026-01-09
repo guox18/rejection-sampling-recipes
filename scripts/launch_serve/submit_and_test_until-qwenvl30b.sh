@@ -24,6 +24,39 @@ MODEL_NAME="qwen3_vl_30b_a3b_thinking"
 # - 对于 TP=1 的小模型（如 30B）:  NUM_INSTANCES=1 (1个rjob任务，自动启动8个vllm实例)
 NUM_INSTANCES=1
 
+# 可选：指定 rjob 分区/计费组（也可在命令行设置环境变量覆盖）
+RJOB_NAMESPACE="${RJOB_NAMESPACE:-}"
+RJOB_CHARGED_GROUP="${RJOB_CHARGED_GROUP:-}"
+
+# ------------- 参数解析（只接收 rjob 相关可选参数） -------------
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --namespace)
+      RJOB_NAMESPACE="$2"
+      shift 2
+      ;;
+    --charged-group)
+      RJOB_CHARGED_GROUP="$2"
+      shift 2
+      ;;
+    *)
+      echo "错误: 未知参数 $1"
+      echo "用法: $0 [--namespace NS] [--charged-group GRP]"
+      exit 1
+      ;;
+  esac
+done
+
+export RJOB_NAMESPACE RJOB_CHARGED_GROUP
+
+RJOB_ARGS=()
+if [ -n "${RJOB_NAMESPACE}" ]; then
+  RJOB_ARGS+=(--namespace "${RJOB_NAMESPACE}")
+fi
+if [ -n "${RJOB_CHARGED_GROUP}" ]; then
+  RJOB_ARGS+=(--charged-group "${RJOB_CHARGED_GROUP}")
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "Step 1: 通过 rjob 提交 ${NUM_INSTANCES} 个模型服务任务..."
@@ -35,7 +68,8 @@ bash "${SCRIPT_DIR}/submit_rjob_instances.sh" \
   --config model_config_example.yaml \
   --model ${MODEL_NAME} \
   --router-ip ${ROUTER_IP} \
-  --router-port ${ROUTER_PORT}
+  --router-port ${ROUTER_PORT} \
+  "${RJOB_ARGS[@]}"
 
 # 如果上面的命令成功返回，说明所有服务都已启动并注册成功
 echo ""

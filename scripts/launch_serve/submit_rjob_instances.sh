@@ -20,8 +20,8 @@ usage() {
 
 可选参数:
   --start-port PORT     起始端口号（默认: 8000）
-  --namespace NS        rjob namespace（默认: ailab-puyullmgpunew）
-  --charged-group GRP   计费组（默认: puyullmgpunew_gpu）
+  --namespace NS        rjob namespace（默认: \$RJOB_NAMESPACE 或空）
+  --charged-group GRP   计费组（默认: \$RJOB_CHARGED_GROUP 或 puyullm_gpu）
   --image IMG           Docker 镜像
   --help                显示此帮助信息
 
@@ -39,8 +39,8 @@ MODEL_NAME=""
 ROUTER_IP=""
 ROUTER_PORT=""
 START_PORT=8000
-NAMESPACE=""
-CHARGED_GROUP="puyullm_gpu"
+NAMESPACE="${RJOB_NAMESPACE:-}"
+CHARGED_GROUP="${RJOB_CHARGED_GROUP:-puyullm_gpu}"
 IMAGE="registry.h.pjlab.org.cn/ailab-puyullmgpu/vllm-openai:v0.11.0"
 
 while [[ $# -gt 0 ]]; do
@@ -232,6 +232,8 @@ bash start_vllm_service.sh \
     --custom-resources mellanox.com/mlnx_rdma=1 \
     --enable-sshd \
     -- bash -c \"${STARTUP_CMD}\""
+  
+  echo $RJOB_CMD
   
   if SUBMIT_OUTPUT=$(eval "$RJOB_CMD" 2>&1); then
     echo "  ✓ 任务已提交: ${JOB_NAME}"

@@ -17,6 +17,11 @@ class Stage(ABC):
     1. 实现 process_item(item) -> dict  (推荐)
     2. 覆盖 process(batch) -> list[dict]  (高级用法, 完全自定义批处理)
 
+    允许:
+    - 过滤/扩增/重排 batch 中的 item。
+      框架会基于 _resume_id 恢复框架字段；如果返回 item 缺失 _resume_id，
+      将自动基于内容哈希生成（用于断点续传与去重）。
+
     装饰器:
     - @Stage.async_mode: 异步并发执行 batch 内的 item
     - @Stage.threaded_mode(n): 多线程并发执行 batch 内的 item

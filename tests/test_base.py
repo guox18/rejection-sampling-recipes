@@ -11,9 +11,10 @@ class TestStage:
     """Tests for Stage base class."""
 
     def test_stage_is_abstract(self):
-        """Stage 是抽象类, 不能直接实例化."""
-        with pytest.raises(TypeError):
-            Stage()
+        """Stage 是基类，调用未实现的方法会抛异常."""
+        stage = Stage()
+        with pytest.raises(NotImplementedError):
+            stage.process_item({})
 
     def test_sync_stage(self):
         """同步 Stage 测试."""
