@@ -19,8 +19,8 @@ RECIPE_NAME="$(basename "$RECIPE_DIR")"
 
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
-export RECIPE_LOG_FILE="/tmp/logs/${RECIPE_NAME}/run_$(date +"%Y%m%d_%H%M%S").log"
-mkdir -p $(dirname $RECIPE_LOG_FILE)
+export LOG_DIR="${LOG_DIR:-/tmp/logs/${RECIPE_NAME}}"
+mkdir -p "${LOG_DIR}"
 
 # ============================================================
 # 配置项 - 在此处修改参数

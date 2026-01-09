@@ -33,7 +33,6 @@ import base64
 from io import BytesIO
 import logging
 import os
-from pathlib import Path
 
 import aiohttp
 from PIL import Image
@@ -45,35 +44,7 @@ from src.utils.qwen3_vl_util import smart_resize, SPATIAL_MERGE_SIZE, IMAGE_MAX_
 from .config import SFTConfig
 from .tools import AsyncOpenAIClient, SyncOpenAIClient, DEFAULT_JUDGE_TEMPLATE, clip_thinking, EXTRACT_ANSWER_TEMPLATE
 
-# 配置专门的 Recipe 日志 - 简洁格式，只输出到文件
-def _setup_recipe_logger():
-    """配置简洁的 Recipe 日志"""
-    logger = logging.getLogger("recipe")
-    logger.setLevel(logging.INFO)
-    logger.propagate = False  # 不传播到 root logger
-    
-    # 如果已经有 handler，不重复添加
-    if logger.handlers:
-        return logger
-    
-    # 从环境变量读取日志文件路径；默认放在 LOG_DIR/logs 下
-    log_dir = os.environ.get("LOG_DIR")
-    default_dir = Path(log_dir) if log_dir else Path.cwd() / "logs"
-    default_dir.mkdir(parents=True, exist_ok=True)
-    log_file = os.environ.get("RECIPE_LOG_FILE", default_dir / "recipe_run.log")
-
-    # 创建文件 handler
-    handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
-    handler.setLevel(logging.INFO)
-    
-    # 简洁格式：只有时间和消息
-    formatter = logging.Formatter('%(asctime)s - %(message)s', datefmt='%H:%M:%S')
-    handler.setFormatter(formatter)
-    
-    logger.addHandler(handler)
-    return logger
-
-logger = _setup_recipe_logger()
+logger = logging.getLogger(__name__)
 
 
 def resize_messages_images(messages: list[dict], max_pixels: int = None) -> list[dict]:

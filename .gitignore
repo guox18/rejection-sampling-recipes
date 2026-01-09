@@ -52,10 +52,8 @@ output/
 outputs/
 checkpoints/
 *.jsonl
-!examples/*.jsonl
 !tests/mock/text.jsonl
 !tests/mock/text-pic.jsonl
-examples/nemotron-post-training-dataset-v2/run_vllm_offline.sh
 
 # OS
 .DS_Store
@@ -64,10 +62,6 @@ Thumbs.db
 # Logs
 *.log
 logs/
-examples/nemotron-post-training-dataset-v2/recipes
-
-# Dev configs with API keys (use *.example.yaml as template)
-configs/dev/test_verifier.yaml
 
 # 
 **/_*.py

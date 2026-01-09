@@ -13,7 +13,13 @@ _LOGGING_CONFIGURED = False
 
 
 def _pick_log_dir(user_dir: Optional[str] = None) -> Path:
-    """Pick a writable log directory with fallbacks."""
+    """Pick a writable log directory with fallbacks.
+
+    Priority:
+      1. Explicit user_dir argument
+      2. LOG_DIR environment variable
+      3. /tmp/rejection-sampling-recipes-logs (default)
+    """
     candidates = []
 
     if user_dir:
@@ -23,9 +29,7 @@ def _pick_log_dir(user_dir: Optional[str] = None) -> Path:
     if env_dir:
         candidates.append(Path(env_dir))
 
-    # repo-local logs directory
-    candidates.append(Path.cwd() / "logs")
-    # final fallback
+    # Default to /tmp to avoid polluting project directory
     candidates.append(Path("/tmp/rejection-sampling-recipes-logs"))
 
     for path in candidates:
@@ -35,8 +39,8 @@ def _pick_log_dir(user_dir: Optional[str] = None) -> Path:
         except Exception:
             continue
 
-    # As a last resort, current working directory
-    return Path.cwd()
+    # As a last resort, /tmp without subdirectory
+    return Path("/tmp")
 
 
 def setup_logging(

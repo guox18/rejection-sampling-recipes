@@ -70,7 +70,8 @@ pipeline.run("data/train.jsonl", "output/train_sft.jsonl")
 ## Logging
 - Default log files live in `logs/`: `pipeline.log` for the driver and `pipeline_worker_<pid>.log` for Ray workers. If `logs/` is not writable, they fall back to `/tmp/rejection-sampling-recipes-logs/`.
 - Environment overrides: `LOG_DIR` (log directory), `LOG_MAX_BYTES` (default 10MB), `LOG_BACKUP_COUNT` (default 5), `LOG_FILE_LEVEL` (default DEBUG), `LOG_CONSOLE_LEVEL` (default INFO).
-- The VL recipe keeps its own `recipe_run.log`; set `RECIPE_LOG_FILE` to change it (defaults under `LOG_DIR` when set).
+ - The VL recipe now reuses the global logging pipeline. Set `LOG_DIR` to group driver/worker logs
+   for this recipe under a specific directory (e.g., `/tmp/logs/vl_cot_sft_plus_parse`).
 
 ## License
 
