@@ -39,7 +39,7 @@ CONFIG_FILE="${RECIPE_DIR}/config.yaml"
 # 输入文件路径（支持多个文件，用空格分隔）
 INPUT_FILES=(
     # test
-    "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Conversation_LongQA~zh~crawler_emoji_gpt4o_zh_20240628~1.0.0~0.0/jsonl/test_10.jsonl"
+    "/mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Single_Image_Conversation_LongQA~zh~crawler_emoji_gpt4o_zh_20240628~1.0.0~0.0/jsonl/test_300.jsonl"
 
 )
 
@@ -47,7 +47,7 @@ INPUT_FILES=(
 # TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 # OUTPUT_DIR="${PROJECT_ROOT}/data/Nemotron-Post-Training-Dataset-v2/datasets/more_sft/${TIMESTAMP}"
 
-LATEST=""                  # 设置为 "--latest" 从最新时间戳目录续传
+LATEST="--latest"                  # 设置为 "--latest" 从最新时间戳目录续传
 # 输出文件后缀
 OUTPUT_SUFFIX="_sft-30b-test"
 SFT_SUBDIR="sft-30b-test"              # SFT 输出子目录名称，默认为 "sft"
@@ -70,6 +70,7 @@ ERROR_THRESHOLD=""         # InternalServerError 错误率阈值，留空使用�
 
 # 激活虚拟环境(确保 Ray worker 使用正确的 Python)
 source "$PROJECT_ROOT/.venv/bin/activate"
+export PYTHONPATH="/usr/local/lib/python3.12/dist-packages:$PYTHONPATH"
 
 # 禁用 Ray 的各种警告和日志
 export RAY_RUNTIME_ENV_HOOK_ENABLED=0

@@ -40,9 +40,6 @@ dev = [
     "ruff>=0.1.0",
     "pre-commit>=3.0.0",
 ]
-vllm = [
-    "vllm>=0.8.5",
-]
 
 [project.urls]
 Homepage = "https://github.com/guox18/rejection-sampling-recipes"
@@ -102,3 +99,7 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "raise NotImplementedError",
 ]
+
+# UV configuration
+[tool.uv]
+package = false

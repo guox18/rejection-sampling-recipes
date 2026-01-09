@@ -405,11 +405,11 @@ class Pipeline:
                     # 统计失败的 item，但仍然保留在输出中
                     if item.get("_failed") is True:
                         failed_rows += 1
-                        error_msg = safe_str(item.get("_error") or "Unknown error", max_length=500)
+                        error_msg = safe_str(item.get("_error") or "Unknown error", max_length=10000)
                         item_id = safe_str(item.get("id", "unknown"), max_length=100)
                         resume_id = safe_str(item.get("_resume_id", "unknown"), max_length=100)
                         traceback_msg = safe_str(
-                            item.get("_traceback", "unknown"), max_length=1000
+                            item.get("_traceback", "unknown"), max_length=10000
                         )
                         print(f"[Pipeline] ⚠️  Writing failed item to output:")
                         print(f"  - ID: {item_id}")
