@@ -7,13 +7,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+import pandas as pd
 import ray
 import ray.data
 from ray.data import ActorPoolStrategy, TaskPoolStrategy
 
 from .base import BaseRecipe, Stage
 from .utils.data_io import convert_to_python_types, convert_scalar_to_python
-from .utils.framework import FRAMEWORK_FIELDS, remove_framework_fields
+from .utils.framework import FRAMEWORK_FIELDS
 
 
 def clean_nan_values(item: dict, warn: bool = True) -> dict:
@@ -173,26 +174,6 @@ class Pipeline:
                 f"Valid stage names are: {valid_stage_names}"
             )
 
-    def _get_nested_value(self, item: dict, field_path: str):
-        """
-        获取嵌套字段的值.
-
-        Args:
-            item: 数据字典
-            field_path: 字段路径, 如 "metadata._uid" 或 "id"
-
-        Returns:
-            字段值, 如果不存在则返回 None
-        """
-        parts = field_path.split(".")
-        value = item
-        for part in parts:
-            if isinstance(value, dict) and part in value:
-                value = value[part]
-            else:
-                return None
-        return value
-
     def _compute_resume_id(self, item: dict) -> str:
         """
         计算数据项的断点续传 ID.
@@ -251,6 +232,83 @@ class Pipeline:
 
         return processed_ids
 
+    def _add_framework_fields(self, batch):
+        """
+        为每个 item 添加框架字段.
+
+        框架字段：
+        - _resume_id: 基于内容哈希的唯一 ID（用于断点续传）
+        - _failed: 标记 item 是否处理失败（初始值 None）
+        - _error: 错误消息（初始值 None）
+        - _traceback: 错误堆栈（初始值 None）
+
+        所有 item 都会有这些字段，避免 pandas DataFrame 填充 NaN。
+        """
+        # 转为 DataFrame（如果不是的话）
+        if isinstance(batch, dict):
+            df = pd.DataFrame(batch)
+        else:
+            df = batch
+
+        if df.empty:
+            return df
+
+        # 为每行计算 resume_id
+        resume_ids = []
+        for idx, row in df.iterrows():
+            row_dict = row.to_dict()
+            resume_id = self._compute_resume_id(row_dict)
+
+            # 检查 resume_id 是否为 None 或空字符串
+            if resume_id is None or resume_id == "":
+                item_id = row_dict.get("id", "unknown")
+                error_msg = (
+                    f"❌ Failed to compute _resume_id for item (id={item_id}, row_index={idx})\n"
+                    f"   resume_id is None or empty. This usually indicates:\n"
+                    f"   1. The data item is completely empty or malformed\n"
+                    f"   2. The 'messages' field is missing or invalid\n"
+                    f"   Data sample: {str(row_dict)[:200]}..."
+                )
+                raise ValueError(error_msg)
+
+            resume_ids.append(resume_id)
+
+        # 添加所有框架字段（初始值为 None，确保数据结构一致）
+        df["_resume_id"] = resume_ids
+        df["_failed"] = None
+        df["_error"] = None
+        df["_traceback"] = None
+
+        return df
+
+    def _create_filter_processed_fn(self, processed_ids: set):
+        """
+        创建过滤已处理 item 的函数.
+
+        Args:
+            processed_ids: 已处理的 _resume_id 集合
+
+        Returns:
+            过滤函数，用于 map_batches
+        """
+
+        def filter_processed(batch):
+            """过滤掉已处理的 item."""
+            # 转为 DataFrame（如果不是的话）
+            if isinstance(batch, dict):
+                df = pd.DataFrame(batch)
+            else:
+                df = batch
+
+            if df.empty:
+                return df
+
+            # 使用已有的 _resume_id 字段过滤
+            mask = ~df["_resume_id"].isin(processed_ids)
+            return df[mask]
+
+        return filter_processed
+
     def run(self, input_path: str, output_path: str = None):
         """
         执行流水线.
@@ -266,8 +324,6 @@ class Pipeline:
         if not ray.is_initialized():
             ray.init()
         
-        # 打印输入输出路径 
-
         # 设置输出路径
         if output_path is None:
             self.work_dir.mkdir(parents=True, exist_ok=True)
@@ -295,59 +351,8 @@ class Pipeline:
         ds = ray.data.read_json(input_path, lines=True)
 
         # 添加框架字段（用于断点续传和错误处理）
-        def add_framework_fields(batch):
-            """
-            为每个 item 添加框架字段.
-            
-            框架字段：
-            - _resume_id: 基于内容哈希的唯一 ID（用于断点续传）
-            - _failed: 标记 item 是否处理失败（初始值 None）
-            - _error: 错误消息（初始值 None）
-            - _traceback: 错误堆栈（初始值 None）
-            
-            所有 item 都会有这些字段，避免 pandas DataFrame 填充 NaN。
-            """
-            import pandas as pd
-
-            # 转为 DataFrame（如果不是的话）
-            if isinstance(batch, dict):
-                df = pd.DataFrame(batch)
-            else:
-                df = batch
-
-            if df.empty:
-                return df
-
-            # 为每行计算 resume_id
-            resume_ids = []
-            for idx, row in df.iterrows():
-                row_dict = row.to_dict()
-                resume_id = self._compute_resume_id(row_dict)
-
-                # 检查 resume_id 是否为 None 或空字符串
-                if resume_id is None or resume_id == "":
-                    item_id = row_dict.get("id", "unknown")
-                    error_msg = (
-                        f"❌ Failed to compute _resume_id for item (id={item_id}, row_index={idx})\n"
-                        f"   resume_id is None or empty. This usually indicates:\n"
-                        f"   1. The data item is completely empty or malformed\n"
-                        f"   2. The 'messages' field is missing or invalid\n"
-                        f"   Data sample: {str(row_dict)[:200]}..."
-                    )
-                    raise ValueError(error_msg)
-
-                resume_ids.append(resume_id)
-
-            # 添加所有框架字段（初始值为 None，确保数据结构一致）
-            df["_resume_id"] = resume_ids
-            df["_failed"] = None
-            df["_error"] = None
-            df["_traceback"] = None
-            
-            return df
-
         ds = ds.map_batches(
-            add_framework_fields,
+            self._add_framework_fields,
             batch_format="pandas",
             batch_size=self.batch_size,
             compute=TaskPoolStrategy(size=self.concurrency),
@@ -355,44 +360,35 @@ class Pipeline:
 
         # 过滤已处理的数据（断点续传）
         if processed_ids:
-
-            def filter_processed(batch):
-                """过滤掉已处理的 item."""
-                import pandas as pd
-
-                # 转为 DataFrame（如果不是的话）
-                if isinstance(batch, dict):
-                    df = pd.DataFrame(batch)
-                else:
-                    df = batch
-
-                if df.empty:
-                    return df
-
-                # 使用已有的 _resume_id 字段过滤
-                mask = ~df["_resume_id"].isin(processed_ids)
-                return df[mask]
-
             ds = ds.map_batches(
-                filter_processed,
+                self._create_filter_processed_fn(processed_ids),
                 batch_format="pandas",
                 batch_size=self.batch_size,
                 compute=TaskPoolStrategy(size=self.concurrency),
             )
 
-        # 依次应用每个 Stage(使用 Actor 模式, 每个 worker 只初始化一次)
+        # 依次应用每个 Stage (使用 Actor 模式, 每个 worker 只初始化一次)
         for stage in self._stages:
             concurrency = self._get_stage_concurrency(stage)
-            map_fn = self._create_map_batches_fn(stage)
             ds = ds.map_batches(
-                map_fn,
-                batch_size=self.batch_size,
+                self._create_map_batches_fn(stage),
                 batch_format="pandas",
+                batch_size=self.batch_size,
                 compute=ActorPoolStrategy(size=concurrency),
             )
 
-        # 写入输出（追加模式，支持断点续传）
-        # 使用 iter_rows 以便逐行写入
+        # 写入输出
+        self._write_output(ds, output_path, len(processed_ids))
+
+    def _write_output(self, ds, output_path: str, resume_count: int):
+        """
+        写入输出数据（追加模式，支持断点续传）.
+
+        Args:
+            ds: Ray Dataset 对象
+            output_path: 输出文件路径
+            resume_count: 已跳过的断点续传数据条数
+        """
         total_rows = 0
         success_rows = 0
         failed_rows = 0
@@ -400,21 +396,21 @@ class Pipeline:
         with open(output_path, "a") as f:
             try:
                 for row in ds.iter_rows():
-                    # row 是字典格式
                     item = dict(row)
                     total_rows += 1
-                    
-                    # 清理 NaN 值（兜底保护）
+
+                    # pandas 处理数据时可能引入 NaN 值
                     item = clean_nan_values(item, warn=True)
 
                     # 统计失败的 item，但仍然保留在输出中
-                    # 注意：经过清理后，_failed 应该是 True/False/None，而不是 NaN
                     if item.get("_failed") is True:
                         failed_rows += 1
                         error_msg = safe_str(item.get("_error") or "Unknown error", max_length=500)
                         item_id = safe_str(item.get("id", "unknown"), max_length=100)
                         resume_id = safe_str(item.get("_resume_id", "unknown"), max_length=100)
-                        traceback_msg = safe_str(item.get("_traceback", "unknown"), max_length=1000)
+                        traceback_msg = safe_str(
+                            item.get("_traceback", "unknown"), max_length=1000
+                        )
                         print(f"[Pipeline] ⚠️  Writing failed item to output:")
                         print(f"  - ID: {item_id}")
                         print(f"  - Resume ID: {resume_id}")
@@ -422,16 +418,17 @@ class Pipeline:
                         print(f"  - Traceback: {traceback_msg}")
                     else:
                         success_rows += 1
-                    
-                    # 写入所有 item（包括失败的）
+
+                    # 写入所有 item
                     f.write(json.dumps(item, ensure_ascii=False) + "\n")
 
-                    # 定期刷新，确保数据及时写入磁盘（断点续传）
+                    # 定期刷新，确保数据及时写入磁盘
                     if success_rows % self.flush_interval == 0:
                         f.flush()
-                        os.fsync(f.fileno())  # 强制写入磁盘
+                        os.fsync(f.fileno())
             except Exception as e:
                 import traceback
+
                 error_trace = traceback.format_exc()
                 print(f"[Pipeline] ❌ Error writing to output file: {safe_str(e, max_length=200)}")
                 print(f"  Traceback:\n{safe_str(error_trace, max_length=2000)}")
@@ -442,7 +439,7 @@ class Pipeline:
                 os.fsync(f.fileno())
 
         print(f"\n[Pipeline Summary]")
-        print(f"  Resume items:  {len(processed_ids)}")
+        print(f"  Resume items:  {resume_count}")
         print(f"  New items:     {total_rows}")
         print(f"  Success:       {success_rows}")
         print(f"  Failed:        {failed_rows}")
@@ -468,7 +465,6 @@ class Pipeline:
         - 异常捕获和 _failed 标记
         """
         is_async = stage.is_async()
-        pipeline_self = self
 
         class StageCallable:
             """封装 Stage 为 Ray Data 可调用对象."""
@@ -483,14 +479,8 @@ class Pipeline:
                     self._stage.shutdown()
 
             def __call__(self, batch):
-                """
-                处理 batch.
-
-                Ray Data 使用 pandas DataFrame 格式.
-                """
-                import pandas as pd
-
-                # 转为 DataFrame(如果不是的话)
+                """处理 batch."""
+                # 转为 DataFrame
                 if isinstance(batch, dict):
                     df = pd.DataFrame(batch)
                 else:
@@ -499,120 +489,61 @@ class Pipeline:
                 if df.empty:
                     return df
 
-                # 转为 list of dict, 并转换为 Python 原生类型
+                # 转为 list of dict
                 rows = df.to_dict("records")
                 rows = [convert_to_python_types(row) for row in rows]
 
-                # 保存每个 item 的框架字段（按 _resume_id 映射）
-                framework_data_by_id = {}
-                for item in rows:
-                    resume_id = item.get("_resume_id")
-                    if resume_id is not None:
-                        framework_data_by_id[resume_id] = {k: item.get(k) for k in FRAMEWORK_FIELDS}
+                # 保存每个 item 的框架字段
+                framework_data = {
+                    idx: {k: item.get(k) for k in FRAMEWORK_FIELDS}
+                    for idx, item in enumerate(rows)
+                }
 
-                # 处理所有 item（包括失败的），由 Stage 内部决定是否跳过失败的 item
-                if rows:
-                    try:
-                        if is_async:
-                            # 异步模式：使用 asyncio 运行
-                            results = asyncio.run(self._stage.process(rows))
-                        else:
-                            # 同步模式
-                            results = self._stage.process(rows)
+                try:
+                    if is_async:
+                        results = asyncio.run(self._stage.process(rows))
+                    else:
+                        results = self._stage.process(rows)
 
-                    except Exception as e:
-                        # 失败处理兜底, 标记所有 item 为失败.
-                        import traceback
+                    # 恢复框架字段
+                    for idx, result in enumerate(results):
+                        for field, value in framework_data[idx].items():
+                            if value is not None and result.get(field) is None:
+                                result[field] = value
 
-                        error_trace = traceback.format_exc()
-                        stage_name = type(self._stage).__name__
-                        print(f"[{stage_name}] ❌ Batch processing failed:")
-                        print(f"  Error: {safe_str(e, max_length=500)}")
-                        print(f"  Traceback:\n{safe_str(error_trace, max_length=2000)}")
-                        results = []
-                        for item in rows:
-                            # 保留原有的框架字段，添加失败标记
-                            # 限制 error 和 traceback 的长度，避免过大的数据
-                            result = {
-                                **item,
-                                "_failed": True,
-                                "_error": safe_str(f"{stage_name}: {str(e)}", max_length=1000),
-                                "_traceback": safe_str(error_trace, max_length=5000),
-                            }
-                            results.append(result)
-                else:
-                    results = []
+                except Exception as e:
+                    # Stage 级兜底异常处理：整个 batch 都会被标记失败
+                    # 正常情况下，Stage.process_item() 应自行处理异常，只标记单个 item 失败
+                    # 触发此分支说明 Stage 有未捕获的异常，应尽量避免
+                    import traceback
 
-                # 所有结果
-                all_results = results
+                    error_trace = traceback.format_exc()
+                    stage_name = type(self._stage).__name__
+                    print(f"[{stage_name}] ❌ Batch processing failed:")
+                    print(f"  Error: {safe_str(e, max_length=500)}")
+                    print(f"  Traceback:\n{safe_str(error_trace, max_length=2000)}")
 
-                # 允许 Stage 过滤/扩增/重排数据：按 _resume_id 恢复框架字段
-                if all_results:
-                    normalized_results = []
-                    seen_resume_ids = set()
-                    for result in all_results:
-                        if not isinstance(result, dict):
-                            raise ValueError(
-                                f"[{type(self._stage).__name__}] Stage must return list[dict], "
-                                f"got item type: {type(result)}"
-                            )
+                    results = [
+                        {
+                            **item,
+                            **framework_data[idx],
+                            "_failed": True,
+                            "_error": safe_str(f"{stage_name}: {str(e)}", max_length=1000),
+                            "_traceback": safe_str(error_trace, max_length=5000),
+                        }
+                        for idx, item in enumerate(rows)
+                    ]
 
-                        resume_id = result.get("_resume_id")
-                        if resume_id is None:
-                            # 新增 item 或丢失 _resume_id：自动生成（基于内容哈希）
-                            clean_item = remove_framework_fields(result)
-                            resume_id = pipeline_self._compute_resume_id(clean_item)
-                            result["_resume_id"] = resume_id
+                # 字段对齐（当不同 item 的字段不一致时）
+                if len(results) > 1:
+                    all_keys = [set(item.keys()) for item in results]
+                    if not all(keys == all_keys[0] for keys in all_keys):
+                        all_fields = set().union(*all_keys)
+                        results = [
+                            {field: item.get(field) for field in all_fields}
+                            for item in results
+                        ]
 
-                        saved_fields = framework_data_by_id.get(resume_id)
-                        if saved_fields:
-                            # 恢复框架字段：如果 saved_fields 中的值不是 None，
-                            # 且 result 中的值是 None，则恢复 saved_fields 中的值
-                            for field, value in saved_fields.items():
-                                if value is not None:
-                                    if field not in result or result[field] is None:
-                                        result[field] = value
-
-                        # 确保所有框架字段存在，避免 pandas 填充 NaN
-                        for field in FRAMEWORK_FIELDS:
-                            if field not in result:
-                                result[field] = None
-
-                        if resume_id in seen_resume_ids:
-                            print(
-                                f"[Warning] Duplicate _resume_id detected in stage output: {resume_id}. "
-                                f"Resume may treat these as duplicates."
-                            )
-                        seen_resume_ids.add(resume_id)
-
-                        normalized_results.append(result)
-
-                    all_results = normalized_results
-
-                # 转回 DataFrame
-                if not all_results:
-                    return pd.DataFrame()
-
-                # 框架层容错：确保字段对齐，避免 pandas 填充 NaN
-                # 检查是否需要字段对齐（当不同 item 的字段不一致时）
-                if len(all_results) > 1:
-                    all_keys = [set(item.keys()) for item in all_results]
-                    need_alignment = not all(keys == all_keys[0] for keys in all_keys)
-                    
-                    if need_alignment:
-                        # 收集所有字段
-                        all_fields = set()
-                        for item in all_results:
-                            all_fields.update(item.keys())
-                        
-                        # 为每个 item 补全缺失字段（设为 None）
-                        aligned_results = []
-                        for item in all_results:
-                            aligned_item = {field: item.get(field, None) for field in all_fields}
-                            aligned_results.append(aligned_item)
-                        
-                        return pd.DataFrame(aligned_results)
-                
-                return pd.DataFrame(all_results)
+                return pd.DataFrame(results)
 
         return StageCallable

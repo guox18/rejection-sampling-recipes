@@ -10,6 +10,7 @@ import ray
 
 from src.base import BaseRecipe, Stage
 from src.pipeline import Pipeline
+from src.utils import get_nested_value
 from src.utils.framework import remove_framework_fields
 
 
@@ -253,16 +254,13 @@ class TestPipelineHelpers:
 
     def test_get_nested_value(self):
         """测试嵌套字段值获取."""
-        recipe = SimpleRecipe(config={})
-        pipeline = Pipeline(recipe=recipe)
-
         item = {"id": "1", "metadata": {"_uid": "uid-1", "nested": {"deep": "value"}}}
 
-        assert pipeline._get_nested_value(item, "id") == "1"
-        assert pipeline._get_nested_value(item, "metadata._uid") == "uid-1"
-        assert pipeline._get_nested_value(item, "metadata.nested.deep") == "value"
-        assert pipeline._get_nested_value(item, "nonexistent") is None
-        assert pipeline._get_nested_value(item, "metadata.nonexistent") is None
+        assert get_nested_value(item, "id") == "1"
+        assert get_nested_value(item, "metadata._uid") == "uid-1"
+        assert get_nested_value(item, "metadata.nested.deep") == "value"
+        assert get_nested_value(item, "nonexistent") is None
+        assert get_nested_value(item, "metadata.nonexistent") is None
 
     def test_get_stage_concurrency(self):
         """测试 Stage 并发度获取."""

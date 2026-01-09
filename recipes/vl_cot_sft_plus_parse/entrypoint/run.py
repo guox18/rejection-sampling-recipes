@@ -98,13 +98,13 @@ def parse_args() -> argparse.Namespace:
         "--base-url",
         type=str,
         default=None,
-        help="采样模型名",
+        help="采样模型 API base URL",
     )
     parser.add_argument(
         "--judge-base-url",
         type=str,
         default=None,
-        help="采样模型名",
+        help="judge 模型 API base URL",
     )
 
     parser.add_argument(
@@ -120,8 +120,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--input", "-i",
         type=str,
-        nargs='+',  # 支持多个输入文件
-        default=[os.path.join(PROJECT_ROOT, "data/Nemotron-Post-Training-Dataset-v2/datasets/train_8000.jsonl")],
+        nargs="+",  # 支持多个输入文件
+        required=True,
         help="输入数据路径 (JSONL 格式)，支持多个文件",
     )
     parser.add_argument(

@@ -2,11 +2,19 @@
 
 Reproducible recipes for rejection sampling in LLM data synthesis.
 
-## Quick Start
+## Install
+
+Choose one:
 
 ```bash
+# uv (recommended)
 uv sync
+
+# pip
+pip install -r requirements.txt
 ```
+
+Note: run commands from the repo root so `src/` and `recipes/` are importable.
 
 ## Core Concepts
 
@@ -17,33 +25,46 @@ uv sync
 ## Project Structure
 
 ```
-├── src/                    # Core framework
-│   ├── base.py            # Stage and BaseRecipe base classes
-│   ├── pipeline.py        # Pipeline execution engine
-│   └── utils/             # Data I/O utilities
-├── recipes/               # Recipe implementations
-│   ├── sft/              # Standard SFT recipe
-├── scripts/              # Utility scripts
-└── tests/                # Test files and mock data
+├── src/                          # Core framework
+│   ├── base.py                  # Stage and BaseRecipe base classes
+│   ├── pipeline.py              # Pipeline execution engine
+│   └── utils/                   # Data I/O utilities
+├── recipes/                     # Recipe implementations
+│   └── vl_cot_sft_plus_parse/   # Current SFT recipe
+├── scripts/                     # Utility scripts
+└── tests/                       # Test files and mock data
 ```
 
 ## Example Usage
 
+### CLI (recommended)
+
+```bash
+# If using OpenAI-compatible APIs
+export OPENAI_API_KEY=your_key
+
+# 1) Optional: add absolute image paths for multimodal data
+python scripts/preprocess_images.py \
+  --input tests/mock/text-pic.jsonl \
+  --image-base-path /abs/path/to/images \
+  --abs-image-path-field abs_path
+
+# 2) Run recipe
+python recipes/vl_cot_sft_plus_parse/entrypoint/run.py \
+  --input tests/mock/text-pic.jsonl \
+  --config recipes/vl_cot_sft_plus_parse/config.yaml
+```
+
+### Python API
+
 ```python
-from recipes.sft import SFTRecipe, SFTConfig
+from recipes.vl_cot_sft_plus_parse import SFTRecipe, SFTConfig
 from src.pipeline import Pipeline
 
-# Configure recipe
-config = SFTConfig(
-    input_path="data/train.jsonl",
-    output_dir="output/",
-    # ... other config options
-)
-
-# Run pipeline
+config = SFTConfig()
 recipe = SFTRecipe(config)
-pipeline = Pipeline(recipe, config)
-pipeline.run()
+pipeline = Pipeline(recipe, batch_size=4, concurrency=4)
+pipeline.run("data/train.jsonl", "output/train_sft.jsonl")
 ```
 
 ## License

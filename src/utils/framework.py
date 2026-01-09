@@ -9,10 +9,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Set, Tuple
 
-# Framework internal fields (automatically preserved by pipeline)
 # 框架内部字段（由 pipeline 自动保留）
 FRAMEWORK_FIELDS: Set[str] = {"_resume_id", "_failed", "_error", "_traceback"}
-
 
 def remove_framework_fields(item: Dict[str, Any], fields: Set[str] = None) -> Dict[str, Any]:
     """

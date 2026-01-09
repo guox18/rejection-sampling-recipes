@@ -24,7 +24,7 @@ class Stage(ABC):
 
     装饰器:
     - @Stage.async_mode: 异步并发执行 batch 内的 item
-    - @Stage.threaded_mode(n): 多线程并发执行 batch 内的 item
+    - @Stage.threaded_mode: 多线程并发执行 batch 内的 item
     """
 
     _execution_mode = "sync"

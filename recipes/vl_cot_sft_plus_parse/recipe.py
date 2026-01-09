@@ -37,6 +37,7 @@ import aiohttp
 from PIL import Image
 
 from src.base import BaseRecipe, Stage
+from src.utils import get_nested_value
 from src.utils.qwen3_vl_util import smart_resize, SPATIAL_MERGE_SIZE, IMAGE_MAX_TOKEN_NUM
 
 from .config import SFTConfig
@@ -340,27 +341,7 @@ class DataConverterStage(Stage):
         """
         self.config = config
         self.abs_image_path_field = config.abs_image_path_field
-    
-    def _get_nested_value(self, item: dict, field_path: str):
-        """
-        获取嵌套字段的值.
-        
-        Args:
-            item: 数据字典
-            field_path: 字段路径，如 "meta_info.abs_image_path" 或 "abs_path"
-        
-        Returns:
-            字段值，如果不存在则返回 None
-        """
-        parts = field_path.split(".")
-        value = item
-        for part in parts:
-            if isinstance(value, dict) and part in value:
-                value = value[part]
-            else:
-                return None
-        return value
-    
+
     def _convert_image_url_to_base64(self, content_item: dict, image_base_path: str) -> tuple[dict, str, str]:
         """
         将 image_url 格式转换为 base64 编码格式.
@@ -551,7 +532,7 @@ class DataConverterStage(Stage):
         if item.get("metadata") is not None and item.get("metadata", {}).get("used_ground_truth") is False:
             return item
         # 1. 获取图片绝对路径（从配置的字段读取）
-        image_base_path = self._get_nested_value(item, self.abs_image_path_field)
+        image_base_path = get_nested_value(item, self.abs_image_path_field)
 
         result = {
             "id": item.get("id", "unknown"),

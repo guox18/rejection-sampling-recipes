@@ -78,6 +78,33 @@ def convert_to_python_types(obj: Any) -> Any:
         return obj
 
 
+def get_nested_value(item: dict, field_path: str):
+    """
+    获取嵌套字段的值.
+
+    Args:
+        item: 数据字典
+        field_path: 字段路径, 如 "metadata._uid" 或 "id"
+
+    Returns:
+        字段值, 如果不存在则返回 None
+
+    Examples:
+        >>> get_nested_value({"a": {"b": 1}}, "a.b")
+        1
+        >>> get_nested_value({"a": {"b": 1}}, "a.c")
+        None
+    """
+    parts = field_path.split(".")
+    value = item
+    for part in parts:
+        if isinstance(value, dict) and part in value:
+            value = value[part]
+        else:
+            return None
+    return value
+
+
 def convert_scalar_to_python(obj: Any) -> Any:
     """
     转换单个标量值为 Python 原生类型.
