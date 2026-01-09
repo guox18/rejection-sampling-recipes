@@ -38,6 +38,7 @@ os.environ.setdefault("PYTHONWARNINGS", "ignore")  # 屏蔽 Python 警告
 
 import argparse
 import json
+import signal
 import sys
 
 # 使用相对引用，python -m 启动时工作目录已在项目根目录
@@ -51,6 +52,26 @@ SFTRecipe = import_module(f"recipes.{_recipe_name}.recipe").SFTRecipe
 
 import ray
 from src.pipeline import Pipeline
+
+# 全局变量：跟踪当前处理的文件路径
+current_processing_file = None
+
+
+def signal_handler(signum, frame):
+    """处理 Ctrl+C 信号."""
+    print("\n\n" + "=" * 60)
+    print("⚠️  收到中断信号 (Ctrl+C)")
+    print("=" * 60)
+    if current_processing_file:
+        print(f"📄 当前正在处理的文件:")
+        print(f"  输入文件: {current_processing_file['input']}")
+        print(f"  输出文件: {current_processing_file['output']}")
+        print(f"  进度: {current_processing_file['index']}/{current_processing_file['total']}")
+    else:
+        print("  当前没有正在处理的文件")
+    print("=" * 60)
+    print("🛑 程序已中止")
+    sys.exit(130)  # 130 = 128 + SIGINT(2)
 
 
 def parse_args() -> argparse.Namespace:
@@ -310,6 +331,7 @@ def check_internal_server_errors(output_file: str, error_threshold: float) -> tu
         return False, 0, 0, 0
     
     total_items = 0
+    non_skipped_items = 0
     failed_items = 0
     internal_server_errors = 0
     
@@ -319,6 +341,9 @@ def check_internal_server_errors(output_file: str, error_threshold: float) -> tu
                 try:
                     item = json.loads(line)
                     total_items += 1
+
+                    if item.get("metadata", {}).get("skipped") is not True:
+                        non_skipped_items += 1
                     
                     # 检查是否失败
                     if item.get('_failed') is True:
@@ -336,14 +361,17 @@ def check_internal_server_errors(output_file: str, error_threshold: float) -> tu
         return False, 0, 0, 0
     
     # 计算 InternalServerError 错误率
-    error_rate = internal_server_errors / total_items
+    error_rate = internal_server_errors / non_skipped_items
     should_stop = error_rate > error_threshold
     
-    return should_stop, total_items, failed_items, internal_server_errors
+    return should_stop, non_skipped_items, failed_items, internal_server_errors
 
 
 def main():
     """运行 SFT Recipe."""
+    # 注册信号处理函数
+    signal.signal(signal.SIGINT, signal_handler)
+    
     args = parse_args()
     
     # 处理输入文件列表
@@ -474,6 +502,15 @@ def main():
     total_failed = 0
     
     for i, (input_file, output_file) in enumerate(zip(input_files, output_files), 1):
+        # 更新全局变量：当前处理的文件信息
+        global current_processing_file
+        current_processing_file = {
+            'input': input_file,
+            'output': output_file,
+            'index': i,
+            'total': len(input_files)
+        }
+        
         print("=" * 60)
         print(f"Processing file {i}/{len(input_files)}: {os.path.basename(input_file)}")
         print("=" * 60)
@@ -484,14 +521,14 @@ def main():
             
             # 错误检测：检查 InternalServerError 错误率
             if args.error_detection:
-                should_stop, total, failed, internal_errors = check_internal_server_errors(
+                should_stop, non_skipped_item, failed, internal_errors = check_internal_server_errors(
                     output_file, args.error_threshold
                 )
                 
-                if total > 0:
-                    error_rate = internal_errors / total
+                if non_skipped_item > 0:
+                    error_rate = internal_errors / non_skipped_item
                     print(f"\n🔍 Error Detection:")
-                    print(f"  Total items:           {total}")
+                    print(f"  Non_skipped_item items:           {non_skipped_item}")
                     print(f"  Failed items:          {failed}")
                     print(f"  InternalServerError:   {internal_errors}")
                     print(f"  Error rate:            {error_rate:.2%}")
@@ -511,6 +548,9 @@ def main():
             total_failed += 1
         
         print()
+    
+    # 清空全局变量
+    current_processing_file = None
     
     # 总结
     print("=" * 60)

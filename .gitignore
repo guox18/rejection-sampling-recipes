@@ -68,3 +68,6 @@ examples/nemotron-post-training-dataset-v2/recipes
 
 # Dev configs with API keys (use *.example.yaml as template)
 configs/dev/test_verifier.yaml
+
+# 
+**/_*.py

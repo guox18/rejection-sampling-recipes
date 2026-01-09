@@ -51,7 +51,6 @@ When adding a new recipe:
    - `tools.py`: Helper functions and clients
    - `entrypoint/run.py` and `run.sh`: Entry points for running the recipe
 3. Define stages by inheriting from `Stage` and implementing `process_item()`
-4. Choose appropriate execution mode based on workload (sync/async/threaded)
 
 
 ## Code Style
@@ -60,5 +59,4 @@ When adding a new recipe:
 - Line length: 100 characters
 - Run `ruff format .` to format code
 - Run `ruff check .` to check for issues
-- Install quality tools: `pip install -e ".[dev]"`
 

@@ -27,7 +27,7 @@ class SFTConfig:
     semaphore_per_sampler: int = 10
     
     # 数据路径配置
-    abs_image_path_field: str = "meta_info.abs_image_path"  # 图片绝对路径字段（支持嵌套，如 meta_info.abs_image_path 或 abs_path）
+    abs_image_path_field: str = "abs_path"  # 图片绝对路径字段（支持嵌套，如 meta_info.abs_image_path 或 abs_path）
     max_image_size_mb: float = 100.0  # 图像文件大小限制（MB），超过此大小的图像会被标记为 failed
     
     # LLM Judge 配置

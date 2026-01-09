@@ -39,8 +39,8 @@ MODEL_NAME=""
 ROUTER_IP=""
 ROUTER_PORT=""
 START_PORT=8000
-NAMESPACE="ailab-puyullmgpunew"
-CHARGED_GROUP="puyullmgpunew_gpu"
+NAMESPACE=""
+CHARGED_GROUP="puyullm_gpu"
 IMAGE="registry.h.pjlab.org.cn/ailab-puyullmgpu/vllm-openai:v0.11.0"
 
 while [[ $# -gt 0 ]]; do
@@ -183,8 +183,10 @@ SUBMITTED_PORTS=()
 for ((i=0; i<NUM_INSTANCES; i++)); do
   # PORT=$((START_PORT + i))
   PORT=$START_PORT
-  TIMESTAMP=$(date +%m%d-%H%M%S)
-  JOB_NAME="vllm-${MODEL_NAME}-${PORT}-${TIMESTAMP}"
+  TIMESTAMP=$(date +%H%M%S)
+  # 裁剪模型名称，确保总长度不超过 64 字符
+  MODEL_NAME_SHORT="${MODEL_NAME:0:50}"
+  JOB_NAME="vllm-${MODEL_NAME_SHORT}-${TIMESTAMP}"
   
   echo "[$((i+1))/${NUM_INSTANCES}] 提交任务: ${JOB_NAME} (端口 ${PORT})..."
   
@@ -198,20 +200,28 @@ bash start_vllm_service.sh \
   --local-port ${PORT}"
 
   echo $STARTUP_CMD
-  
+
   # 提交 rjob 任务
-  SUBMIT_OUTPUT=$(rjob submit \
+  # 构建基础命令
+  RJOB_CMD="rjob submit \
     -e DISTRIBUTED_JOB=true \
     -e NCCL_DEBUG_SUBSYS=ALL \
-    --image="${IMAGE}" \
-    --namespace "${NAMESPACE}" \
+    --image=\"${IMAGE}\""
+  
+  # 只有当 NAMESPACE 非空时才添加 --namespace 参数
+  if [ -n "$NAMESPACE" ]; then
+    RJOB_CMD="$RJOB_CMD \
+    --namespace \"${NAMESPACE}\""
+  fi
+  
+  RJOB_CMD="$RJOB_CMD \
+    --charged-group \"${CHARGED_GROUP}\" \
     --host-network=true \
-    --name "${JOB_NAME}" \
+    --name \"${JOB_NAME}\" \
     -P 1 \
     --gpu 8 \
     --cpu 80 \
     --memory 800000 \
-    --charged-group "${CHARGED_GROUP}" \
     --private-machine='group' \
     --gang-start=true \
     --mount=gpfs://gpfs1/songdemin:/mnt/shared-storage-user/songdemin \
@@ -221,8 +231,9 @@ bash start_vllm_service.sh \
     --mount=gpfs://gpfs2/intern-pretrain-shared02:/mnt/shared-storage-user/intern-pretrain-shared02 \
     --custom-resources mellanox.com/mlnx_rdma=1 \
     --enable-sshd \
-    -- bash -c "${STARTUP_CMD}" 2>&1)
+    -- bash -c \"${STARTUP_CMD}\""
   
+  SUBMIT_OUTPUT=$(eval $RJOB_CMD 2>&1)
   if [ $? -eq 0 ]; then
     echo "  ✓ 任务已提交: ${JOB_NAME}"
     SUBMITTED_JOBS+=("${JOB_NAME}")

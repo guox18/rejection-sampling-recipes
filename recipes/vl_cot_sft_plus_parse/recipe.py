@@ -213,6 +213,62 @@ def resize_messages_images(messages: list[dict], max_pixels: int = None) -> list
     return messages
 
 
+def _restore_image_urls(messages: list, original_urls: list) -> list:
+    """
+    将 messages 中的 base64 图像 URL 恢复为原始相对路径.
+    
+    Args:
+        messages: 包含 base64 图像的消息列表
+        original_urls: 原始的相对路径列表
+    
+    Returns:
+        恢复相对路径后的消息列表
+    """
+    if not original_urls:
+        return messages
+    
+    # 复制 messages 避免修改原始数据
+    restored_messages = []
+    url_index = 0
+    
+    for msg in messages:
+        restored_msg = {"role": msg["role"]}
+        content = msg.get("content")
+        
+        # 如果是 user 消息且 content 是列表（可能包含图像）
+        if msg.get("role") == "user" and isinstance(content, list):
+            restored_content = []
+            for content_item in content:
+                if isinstance(content_item, dict) and content_item.get("type") == "image_url":
+                    # 恢复为原始相对路径
+                    if url_index < len(original_urls):
+                        restored_item = {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": original_urls[url_index]
+                            }
+                        }
+                        # 保留 image_wh 信息（如果原始数据有的话）
+                        image_url_data = content_item.get("image_url", {})
+                        if "image_wh" in image_url_data:
+                            restored_item["image_url"]["image_wh"] = image_url_data["image_wh"]
+                        
+                        restored_content.append(restored_item)
+                        url_index += 1
+                    else:
+                        # 如果没有对应的原始 URL，保持原样
+                        restored_content.append(content_item)
+                else:
+                    restored_content.append(content_item)
+            restored_msg["content"] = restored_content
+        else:
+            # 非 user 消息或纯文本，直接复制
+            restored_msg["content"] = content
+        
+        restored_messages.append(restored_msg)
+    
+    return restored_messages
+
 class DataConverterStage(Stage):
     """
     数据格式转换阶段：将原始数据转换为 SFT 训练格式.
@@ -447,6 +503,36 @@ class DataConverterStage(Stage):
                 new_content.append(content_item)
         
         return new_content, image_paths, relative_paths
+    
+    def process(self, batch: list[dict]) -> list[dict]:
+        """覆盖标准的 process 方法, 因为最后一个阶段需要进行失败处理"""
+        results = []
+        for item in batch:
+            # (1) bugfix: 之前的 formatter 忘记恢复 img_url
+            # 导致, 第二轮 roll 数据时, 无法找到第一轮出错项的 img_url
+            original_urls = (item.get("metadata") or {}).get("original_image_urls")
+            if original_urls:
+                item["messages"] = _restore_image_urls(item["messages"], original_urls)
+            
+            try:
+                result = self.process_item(item)
+                results.append(result)
+            except Exception as e:
+                import traceback
+
+                error_trace = traceback.format_exc()
+                logger.error(
+                    f"[{type(self).__name__}] ❌ Item {item.get('id', 'unknown')} failed: {e}\n{error_trace}"
+                )
+                results.append(
+                    {
+                        **item,
+                        "_failed": True,
+                        "_error": f"{type(self).__name__}: {e}",
+                        "_traceback": error_trace,
+                    }
+                )
+        return results
     
     def process_item(self, item: dict) -> dict:
         """
@@ -898,69 +984,49 @@ class FormatterStage(Stage):
     
     def __init__(self, config: SFTConfig):
         self.config = config
-    
-    def _restore_image_urls(self, messages: list, original_urls: list) -> list:
-        """
-        将 messages 中的 base64 图像 URL 恢复为原始相对路径.
-        
-        Args:
-            messages: 包含 base64 图像的消息列表
-            original_urls: 原始的相对路径列表
-        
-        Returns:
-            恢复相对路径后的消息列表
-        """
-        if not original_urls:
-            return messages
-        
-        # 复制 messages 避免修改原始数据
-        restored_messages = []
-        url_index = 0
-        
-        for msg in messages:
-            restored_msg = {"role": msg["role"]}
-            content = msg.get("content")
-            
-            # 如果是 user 消息且 content 是列表（可能包含图像）
-            if msg.get("role") == "user" and isinstance(content, list):
-                restored_content = []
-                for content_item in content:
-                    if isinstance(content_item, dict) and content_item.get("type") == "image_url":
-                        # 恢复为原始相对路径
-                        if url_index < len(original_urls):
-                            restored_item = {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": original_urls[url_index]
-                                }
-                            }
-                            # 保留 image_wh 信息（如果原始数据有的话）
-                            image_url_data = content_item.get("image_url", {})
-                            if "image_wh" in image_url_data:
-                                restored_item["image_url"]["image_wh"] = image_url_data["image_wh"]
-                            
-                            restored_content.append(restored_item)
-                            url_index += 1
-                        else:
-                            # 如果没有对应的原始 URL，保持原样
-                            restored_content.append(content_item)
-                    else:
-                        restored_content.append(content_item)
-                restored_msg["content"] = restored_content
-            else:
-                # 非 user 消息或纯文本，直接复制
-                restored_msg["content"] = content
-            
-            restored_messages.append(restored_msg)
-        
-        return restored_messages
 
+    def process(self, batch: list[dict]) -> list[dict]:
+        """覆盖标准的 process 方法, 因为最后一个阶段需要进行失败处理"""
+        results = []
+        for item in batch:
+            # 无论成功失败, 都需要恢复 image url 字段, 因为可能还会再 roll 一轮数据
+            # 恢复原始图像 URL（从 base64 恢复为相对路径）
+            original_urls = (item.get("metadata") or {}).get("original_image_urls")
+            if original_urls:
+                item["messages"] = _restore_image_urls(item["messages"], original_urls)
+            
+            
+            if item.get("_failed") is True:
+                results.append(item)
+                continue
+
+            try:
+                result = self.process_item(item)
+                results.append(result)
+            except Exception as e:
+                import traceback
+
+                error_trace = traceback.format_exc()
+                logger.error(
+                    f"[{type(self).__name__}] ❌ Item {item.get('id', 'unknown')} failed: {e}\n{error_trace}"
+                )
+                results.append(
+                    {
+                        **item,
+                        "_failed": True,
+                        "_error": f"{type(self).__name__}: {e}",
+                        "_traceback": error_trace,
+                    }
+                )
+        return results
+    
     def process_item(self, item: dict) -> dict:
         """
         处理单个 item, 格式化为 SFT 训练数据.
         """
         if (item.get("metadata") or {}).get("used_ground_truth") is False:
             logger.info(f"[FormatterStage] Item {item.get('id', 'unknown')}: Already has valid output, skipping")
+            item["metadata"]["skipped"] = True
             return item
         
         messages = item.get("messages", [])
@@ -994,11 +1060,6 @@ class FormatterStage(Stage):
         
         # 构建 SFT 格式
         sft_messages = messages + [{"role": "assistant", "content": best_response}]
-        
-        # 恢复原始图像 URL（从 base64 恢复为相对路径）
-        original_urls = metadata.get("original_image_urls", [])
-        if original_urls:
-            sft_messages = self._restore_image_urls(sft_messages, original_urls)
         
         # 清理 metadata（移除内部调试信息）
         clean_metadata = {k: v for k, v in metadata.items() 
@@ -1051,3 +1112,34 @@ class SFTRecipe(BaseRecipe):
             VerifierStage(self.config),
             FormatterStage(self.config),
         ]
+
+
+if __name__ == "__main__":
+    config = SFTConfig()
+
+    import json
+    
+    data_converter = DataConverterStage(config)
+   
+    test_file = "/mnt/shared-storage-user/songdemin/user/guoxu/public/rejection-sampling-recipes/tests/_testsvl_cot_sft_plus_parse.jsonl"
+    batch = []
+    with open(test_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            if line.strip():
+                batch.append(json.loads(line))
+
+    results = data_converter.process(batch)
+    for result in results:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print("-" * 80)
+    
+    import sys
+    res = sys.modules['recipes.vl_cot_sft_plus_parse.recipe'] is sys.modules['__main__']
+    print(res)
+    from recipes.vl_cot_sft_plus_parse.recipe import DataConverterStage
+    res = isinstance(data_converter, DataConverterStage)
+    print(res)
+    print(type(data_converter).__name__)
+    print(DataConverterStage.__name__)
+    print('-------------------')
+    print(sys.modules)

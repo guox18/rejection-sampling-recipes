@@ -49,6 +49,44 @@ def clean_nan_values(item: dict, warn: bool = True) -> dict:
     return cleaned_item
 
 
+def safe_str(value, max_length: int = 500) -> str:
+    """
+    安全地将值转换为字符串，避免打印过大的数据导致程序崩溃.
+    
+    Args:
+        value: 要转换的值
+        max_length: 字符串的最大长度
+    
+    Returns:
+        安全的字符串表示
+    """
+    try:
+        v_str = str(value)
+        if len(v_str) > max_length:
+            return v_str[:max_length] + f"... (truncated, total {len(v_str)} chars)"
+        return v_str
+    except Exception as e:
+        return f"<error converting to string: {e}>"
+
+
+def safe_repr_item(item: dict, max_value_length: int = 200) -> str:
+    """
+    安全地生成 item 的字符串表示，避免打印过大的数据导致程序崩溃.
+    
+    Args:
+        item: 要表示的数据字典
+        max_value_length: 每个字段值的最大长度
+    
+    Returns:
+        安全的字符串表示
+    """
+    result = []
+    for k, v in item.items():
+        v_str = safe_str(v, max_value_length)
+        result.append(f"  {k}: {v_str}")
+    return "{\n" + "\n".join(result) + "\n}"
+
+
 class Pipeline:
     """
     流水线框架, 封装 Ray Data.
@@ -227,6 +265,8 @@ class Pipeline:
         # 确保 Ray 已初始化
         if not ray.is_initialized():
             ray.init()
+        
+        # 打印输入输出路径 
 
         # 设置输出路径
         if output_path is None:
@@ -371,15 +411,15 @@ class Pipeline:
                     # 注意：经过清理后，_failed 应该是 True/False/None，而不是 NaN
                     if item.get("_failed") is True:
                         failed_rows += 1
-                        error_msg = item.get("_error") or "Unknown error"
-                        item_id = item.get("id", "unknown")
-                        resume_id = item.get("_resume_id", "unknown")
-                        traceback = item.get("_traceback", "unknown")
+                        error_msg = safe_str(item.get("_error") or "Unknown error", max_length=500)
+                        item_id = safe_str(item.get("id", "unknown"), max_length=100)
+                        resume_id = safe_str(item.get("_resume_id", "unknown"), max_length=100)
+                        traceback_msg = safe_str(item.get("_traceback", "unknown"), max_length=1000)
                         print(f"[Pipeline] ⚠️  Writing failed item to output:")
                         print(f"  - ID: {item_id}")
                         print(f"  - Resume ID: {resume_id}")
                         print(f"  - Error: {error_msg}")
-                        print(f"  - Traceback: {traceback}")
+                        print(f"  - Traceback: {traceback_msg}")
                     else:
                         success_rows += 1
                     
@@ -393,9 +433,9 @@ class Pipeline:
             except Exception as e:
                 import traceback
                 error_trace = traceback.format_exc()
-                print(f"[Pipeline] ❌ Error writing to output file: {e}")
-                print(f"  Traceback:\n{error_trace}")
-                print(f"  Item that caused the error: {item}")
+                print(f"[Pipeline] ❌ Error writing to output file: {safe_str(e, max_length=200)}")
+                print(f"  Traceback:\n{safe_str(error_trace, max_length=2000)}")
+                print(f"  Item that caused the error:\n{safe_repr_item(item)}")
             finally:
                 # 最后再刷新一次，确保所有数据都写入
                 f.flush()
@@ -497,18 +537,19 @@ class Pipeline:
                         error_trace = traceback.format_exc()
                         stage_name = type(self._stage).__name__
                         print(f"[{stage_name}] ❌ Batch processing failed:")
-                        print(f"  Error: {e}")
-                        print(f"  Traceback:\n{error_trace}")
+                        print(f"  Error: {safe_str(e, max_length=500)}")
+                        print(f"  Traceback:\n{safe_str(error_trace, max_length=2000)}")
                         results = []
                         for idx, item in enumerate(rows):
                             saved_fields = framework_data[idx]
                             # 保留原有的框架字段，添加失败标记
+                            # 限制 error 和 traceback 的长度，避免过大的数据
                             result = {
                                 **item,
                                 **saved_fields,  # 恢复框架字段
                                 "_failed": True,
-                                "_error": f"{stage_name}: {str(e)}",
-                                "_traceback": error_trace,
+                                "_error": safe_str(f"{stage_name}: {str(e)}", max_length=1000),
+                                "_traceback": safe_str(error_trace, max_length=5000),
                             }
                             results.append(result)
                 else:
