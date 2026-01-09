@@ -6,12 +6,10 @@ set -euo pipefail
 # ============================================================================
 
 echo "=========================================="
-echo "完整工作流示例（rjob 模式）"
-echo "=========================================="
 echo ""
 
 # ------------- 配置参数 -------------
-ROUTER_IP="100.99.12.66"
+ROUTER_IP="10.102.249.62"
 ROUTER_PORT="21001"
 MODEL_NAME="qwen3_vl_235b_a22b_thinking"
 
@@ -24,7 +22,7 @@ MODEL_NAME="qwen3_vl_235b_a22b_thinking"
 # ⭐ 重要: NUM_INSTANCES 的含义已改变！
 # - 对于 TP=8 的大模型（如 235B）: NUM_INSTANCES=8 (8个rjob任务，每个任务1个vllm实例)
 # - 对于 TP=1 的小模型（如 30B）:  NUM_INSTANCES=1 (1个rjob任务，自动启动8个vllm实例)
-NUM_INSTANCES=15
+NUM_INSTANCES=1
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -74,4 +72,3 @@ echo ""
 echo "提示: 任务完成后，记得清理 rjob 任务"
 echo "  查看任务: cat /tmp/vllm_rjobs_${ROUTER_PORT}.txt"
 echo "  停止任务: 参考上面文件中的任务名称，使用 rjob stop <job-name>"
-
