@@ -233,13 +233,13 @@ bash start_vllm_service.sh \
     --enable-sshd \
     -- bash -c \"${STARTUP_CMD}\""
   
-  SUBMIT_OUTPUT=$(eval $RJOB_CMD 2>&1)
-  if [ $? -eq 0 ]; then
+  if SUBMIT_OUTPUT=$(eval "$RJOB_CMD" 2>&1); then
     echo "  ✓ 任务已提交: ${JOB_NAME}"
     SUBMITTED_JOBS+=("${JOB_NAME}")
     SUBMITTED_PORTS+=("${PORT}")
   else
-    echo "  ✗ 任务提交失败"
+    status=$?
+    echo "  ✗ 任务提交失败 (exit code ${status})"
     echo "${SUBMIT_OUTPUT}"
   fi
   
@@ -391,4 +391,3 @@ if [ "$ALL_REGISTERED" = true ]; then
 else
   exit 1
 fi
-

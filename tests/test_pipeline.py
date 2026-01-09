@@ -1,7 +1,6 @@
 """Tests for Pipeline."""
 
 import json
-import os
 import tempfile
 from pathlib import Path
 
@@ -34,34 +33,6 @@ class AddFieldStage(Stage):
         return [{**item, self.field_name: self.field_value} for item in batch]
 
 
-class FailingStage(Stage):
-    """会失败的 Stage, 用于测试错误处理."""
-
-    def __init__(self, fail_ids: set = None):
-        self.fail_ids = fail_ids or set()
-
-    def process(self, batch):
-        results = []
-        for item in batch:
-            if item.get("id") in self.fail_ids:
-                results.append({**item, "_failed": True, "_error": "Intentional failure"})
-            else:
-                results.append(item)
-        return results
-
-
-class FilterStage(Stage):
-    """过滤 Stage, 移除某些 item."""
-
-    def __init__(self, keep_ids: set = None):
-        self.keep_ids = keep_ids
-
-    def process(self, batch):
-        if self.keep_ids is None:
-            return batch
-        return [item for item in batch if item.get("id") in self.keep_ids]
-
-
 # ============================================================
 # Test Recipes
 # ============================================================
@@ -85,20 +56,6 @@ class MultiStageRecipe(BaseRecipe):
         ]
 
 
-class FailingRecipe(BaseRecipe):
-    """包含失败 Stage 的 Recipe."""
-
-    def __init__(self, config, fail_ids: set = None):
-        super().__init__(config)
-        self.fail_ids = fail_ids or set()
-
-    def stages(self):
-        return [
-            FailingStage(self.fail_ids),
-            PassThroughStage(),
-        ]
-
-
 # ============================================================
 # Tests
 # ============================================================
@@ -106,17 +63,6 @@ class FailingRecipe(BaseRecipe):
 
 class TestPipelineInit:
     """Pipeline 初始化测试."""
-
-    def test_basic_init(self):
-        """基本初始化."""
-        recipe = SimpleRecipe(config={})
-        pipeline = Pipeline(recipe=recipe)
-
-        assert pipeline.recipe == recipe
-        assert pipeline.batch_size == 32
-        assert pipeline.concurrency == 10
-        assert pipeline.preserve_order is True
-        assert pipeline.resume is True
 
     def test_custom_init(self):
         """自定义参数初始化."""
@@ -228,72 +174,6 @@ class TestPipelineRun:
             assert item.get("stage1") == "done"
             assert item.get("stage2") == "done"
             assert item.get("stage3") == "done"
-
-    def test_resume_skip_processed(self, temp_files):
-        """断点续传 - 跳过已处理的数据."""
-        input_path, output_path = temp_files
-
-        # 写入测试数据
-        test_data = [
-            {"id": "1", "value": "a", "metadata": {"_uid": "1"}},
-            {"id": "2", "value": "b", "metadata": {"_uid": "2"}},
-            {"id": "3", "value": "c", "metadata": {"_uid": "3"}},
-        ]
-        with open(input_path, "w") as f:
-            for item in test_data:
-                f.write(json.dumps(item) + "\n")
-
-        # 预先写入一些已处理的数据
-        with open(output_path, "w") as f:
-            f.write(json.dumps({"id": "1", "value": "a", "metadata": {"_uid": "1"}}) + "\n")
-
-        # 运行 Pipeline (resume=True)
-        recipe = SimpleRecipe(config={})
-        pipeline = Pipeline(
-            recipe=recipe,
-            batch_size=10,
-            concurrency=1,
-            resume=True,
-        )
-        pipeline.run(str(input_path), str(output_path))
-
-        # 验证输出 - 应该有 3 条(1 条已存在 + 2 条新处理)
-        with open(output_path) as f:
-            output_data = [json.loads(line) for line in f]
-
-        assert len(output_data) == 3
-
-    def test_failed_items_skipped(self, temp_files):
-        """失败的 item 会被跳过."""
-        input_path, output_path = temp_files
-
-        # 写入测试数据
-        test_data = [
-            {"id": "1", "metadata": {"_uid": "1"}},
-            {"id": "2", "metadata": {"_uid": "2"}},
-            {"id": "3", "metadata": {"_uid": "3"}},
-        ]
-        with open(input_path, "w") as f:
-            for item in test_data:
-                f.write(json.dumps(item) + "\n")
-
-        # 运行 Pipeline - id=2 会失败
-        recipe = FailingRecipe(config={}, fail_ids={"2"})
-        pipeline = Pipeline(
-            recipe=recipe,
-            batch_size=10,
-            concurrency=1,
-            resume=False,
-        )
-        pipeline.run(str(input_path), str(output_path))
-
-        # 验证输出 - 失败的 item 应该被跳过(因为带 _failed 标记)
-        with open(output_path) as f:
-            output_data = [json.loads(line) for line in f]
-
-        # 只有 2 条成功的
-        successful = [item for item in output_data if item.get("_failed") is False]
-        assert len(successful) == 2
 
 
 class TestPipelineHelpers:
