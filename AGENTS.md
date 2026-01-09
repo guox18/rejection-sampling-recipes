@@ -41,6 +41,10 @@ The pipeline engine executes recipes on datasets with features like batching, er
   need asyncio.
 - Never modify framework internal fields: `_resume_id`, `_failed`, `_error`, `_traceback`
 - Follow the existing project structure when adding new recipes
+- Logging: driver writes `logs/pipeline.log` (falls back to `/tmp/rejection-sampling-recipes-logs`);
+  Ray workers write `logs/pipeline_worker_<pid>.log`; override via `LOG_DIR`, `LOG_MAX_BYTES`,
+  `LOG_BACKUP_COUNT`, `LOG_FILE_LEVEL`, `LOG_CONSOLE_LEVEL`. VL recipe still writes `recipe_run.log`
+  (override `RECIPE_LOG_FILE`).
 
 ## Adding a New Recipe
 

@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
@@ -15,6 +16,9 @@ from ray.data import ActorPoolStrategy, TaskPoolStrategy
 from .base import BaseRecipe, Stage
 from .utils.data_io import convert_to_python_types, convert_scalar_to_python
 from .utils.framework import FRAMEWORK_FIELDS
+from .utils.logging_utils import setup_logging
+
+logger = logging.getLogger(__name__)
 
 
 def clean_nan_values(item: dict, warn: bool = True) -> dict:
@@ -39,9 +43,11 @@ def clean_nan_values(item: dict, warn: bool = True) -> dict:
         if isinstance(v, float) and math.isnan(v):
             if warn and not has_nan:
                 # 第一次发现 NaN 时打印警告（每个 item 只警告一次）
-                print(f"⚠️  Warning: Found NaN value in item {item.get('id', 'unknown')}")
-                print(f"   This should not happen after framework initialization.")
-                print(f"   Please report this as a bug if you see this message.")
+                logger.warning(
+                    "Found NaN value in item %s. This should not happen after framework initialization. "
+                    "Please report this as a bug if you see this message.",
+                    item.get("id", "unknown"),
+                )
                 has_nan = True
             cleaned_item[k] = None
         else:
@@ -228,7 +234,10 @@ class Pipeline:
                             continue
 
             if len(processed_ids) > 1_000_000:
-                print(f"[Warning] Loaded {len(processed_ids):,} processed IDs into memory.")
+                logger.warning(
+                    "[Pipeline] Loaded %s processed IDs into memory.",
+                    f"{len(processed_ids):,}",
+                )
 
         return processed_ids
 
@@ -320,6 +329,9 @@ class Pipeline:
         Raises:
             ValueError: 如果数据项的 _resume_id 计算结果为 None 或空字符串
         """
+        _, log_path = setup_logging(role="driver")
+        logger.info("[Pipeline] Logging to: %s", log_path)
+
         # 确保 Ray 已初始化
         if not ray.is_initialized():
             ray.init()
@@ -345,7 +357,7 @@ class Pipeline:
         if self.resume:
             processed_ids = self._load_processed_ids(output_path)
             if processed_ids:
-                print(f"[Resume] Found {len(processed_ids)} processed items, will skip them.")
+                logger.info("[Resume] Found %s processed items, will skip them.", len(processed_ids))
 
         # 读取数据（JSONL 格式：每行一个 JSON 对象）
         ds = ray.data.read_json(input_path, lines=True)
@@ -411,11 +423,13 @@ class Pipeline:
                         traceback_msg = safe_str(
                             item.get("_traceback", "unknown"), max_length=10000
                         )
-                        print(f"[Pipeline] ⚠️  Writing failed item to output:")
-                        print(f"  - ID: {item_id}")
-                        print(f"  - Resume ID: {resume_id}")
-                        print(f"  - Error: {error_msg}")
-                        print(f"  - Traceback: {traceback_msg}")
+                        logger.warning(
+                            "[Pipeline] Writing failed item to output | ID=%s | Resume ID=%s | Error=%s | Traceback=%s",
+                            item_id,
+                            resume_id,
+                            error_msg,
+                            traceback_msg,
+                        )
                     else:
                         success_rows += 1
 
@@ -430,21 +444,27 @@ class Pipeline:
                 import traceback
 
                 error_trace = traceback.format_exc()
-                print(f"[Pipeline] ❌ Error writing to output file: {safe_str(e, max_length=200)}")
-                print(f"  Traceback:\n{safe_str(error_trace, max_length=2000)}")
-                print(f"  Item that caused the error:\n{safe_repr_item(item)}")
+                logger.error(
+                    "[Pipeline] Error writing to output file: %s | Traceback: %s | Item: %s",
+                    safe_str(e, max_length=200),
+                    safe_str(error_trace, max_length=2000),
+                    safe_repr_item(item),
+                )
             finally:
                 # 最后再刷新一次，确保所有数据都写入
                 f.flush()
                 os.fsync(f.fileno())
 
-        print(f"\n[Pipeline Summary]")
-        print(f"  Resume items:  {resume_count}")
-        print(f"  New items:     {total_rows}")
-        print(f"  Success:       {success_rows}")
-        print(f"  Failed:        {failed_rows}")
-        print(f"  Output file:   {output_path}")
-        print(f"\n[Done] Output written to: {output_path}")
+        summary = (
+            "[Pipeline Summary]\n"
+            f"  Resume items:  {resume_count}\n"
+            f"  New items:     {total_rows}\n"
+            f"  Success:       {success_rows}\n"
+            f"  Failed:        {failed_rows}\n"
+            f"  Output file:   {output_path}\n"
+            f"[Done] Output written to: {output_path}"
+        )
+        logger.info(summary)
 
     def _get_stage_concurrency(self, stage: Stage) -> int:
         """
@@ -464,15 +484,16 @@ class Pipeline:
         - 失败 item 的跳过逻辑
         - 异常捕获和 _failed 标记
         """
-        is_async = stage.is_async()
-
         class StageCallable:
             """封装 Stage 为 Ray Data 可调用对象."""
 
             def __init__(self):
+                setup_logging(role="worker")
+                is_async = stage.is_async()
                 # Actor 模式：每个 worker 只初始化一次
                 self._stage = stage
                 self._stage.initialize()
+                self._is_async = is_async
 
             def __del__(self):
                 if hasattr(self, "_stage"):
@@ -500,7 +521,7 @@ class Pipeline:
                 }
 
                 try:
-                    if is_async:
+                    if self._is_async:
                         results = asyncio.run(self._stage.process(rows))
                     else:
                         results = self._stage.process(rows)
@@ -519,9 +540,12 @@ class Pipeline:
 
                     error_trace = traceback.format_exc()
                     stage_name = type(self._stage).__name__
-                    print(f"[{stage_name}] ❌ Batch processing failed:")
-                    print(f"  Error: {safe_str(e, max_length=500)}")
-                    print(f"  Traceback:\n{safe_str(error_trace, max_length=2000)}")
+                    logger.error(
+                        "[%s] Batch processing failed | Error: %s | Traceback: %s",
+                        stage_name,
+                        safe_str(e, max_length=500),
+                        safe_str(error_trace, max_length=2000),
+                    )
 
                     results = [
                         {

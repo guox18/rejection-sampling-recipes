@@ -6,11 +6,14 @@ that are used by the pipeline system.
 """
 
 import json
+import logging
 from pathlib import Path
 from typing import Any, Dict, Set, Tuple
 
 # 框架内部字段（由 pipeline 自动保留）
 FRAMEWORK_FIELDS: Set[str] = {"_resume_id", "_failed", "_error", "_traceback"}
+
+logger = logging.getLogger(__name__)
 
 def remove_framework_fields(item: Dict[str, Any], fields: Set[str] = None) -> Dict[str, Any]:
     """
@@ -101,13 +104,13 @@ def clean_framework_fields_from_file(
             except json.JSONDecodeError as e:
                 error_lines += 1
                 if verbose:
-                    print(f"  [Warning] Line {line_num}: JSON decode error - {e}")
+                    logger.warning("Line %s: JSON decode error - %s", line_num, e)
                 continue
 
     if verbose:
-        print(f"✓ Processed {total_lines} lines")
-        print(f"  - Cleaned: {cleaned_lines}")
-        print(f"  - Errors: {error_lines}")
+        logger.info("Processed %s lines", total_lines)
+        logger.info("  - Cleaned: %s", cleaned_lines)
+        logger.info("  - Errors: %s", error_lines)
 
     return total_lines, cleaned_lines, error_lines
 

@@ -33,6 +33,7 @@ import base64
 from io import BytesIO
 import logging
 import os
+from pathlib import Path
 
 import aiohttp
 from PIL import Image
@@ -55,9 +56,12 @@ def _setup_recipe_logger():
     if logger.handlers:
         return logger
     
-    # 从环境变量读取日志文件路径
-    log_file = os.environ.get("RECIPE_LOG_FILE", "recipe_run.log")
-    
+    # 从环境变量读取日志文件路径；默认放在 LOG_DIR/logs 下
+    log_dir = os.environ.get("LOG_DIR")
+    default_dir = Path(log_dir) if log_dir else Path.cwd() / "logs"
+    default_dir.mkdir(parents=True, exist_ok=True)
+    log_file = os.environ.get("RECIPE_LOG_FILE", default_dir / "recipe_run.log")
+
     # 创建文件 handler
     handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
     handler.setLevel(logging.INFO)
