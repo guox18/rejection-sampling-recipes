@@ -1,19 +1,19 @@
 Quick Start
-1) 部署并启动 SGLang Router
+1) Deploy and start the SGLang Router
 ```bash
 pip install sglang-router
 python -m sglang_router.launch_router --host 0.0.0.0 --port 21001 --prometheus-port 29001
 ```
-2) 在 `scripts/launch_serve/submit_and_test_until.sh` 设置 `MODEL_NAME` 和 `NUM_INSTANCES`
-3) 启动并等待注册完成：
+2) Set `MODEL_NAME` and `NUM_INSTANCES` in `scripts/launch_serve/submit_and_test_until.sh`
+3) Launch and wait for registration to complete:
 ```bash
 bash scripts/launch_serve/submit_and_test_until.sh
 ```
-4) 服务就绪后执行你的下游脚本（示例）：
+4) After services are ready, run your downstream script (example):
 ```bash
 bash xxx.sh
 ```
 
-补充说明：
-- `MODEL_NAME` 需与配置文件里的模型名一致
-- `NUM_INSTANCES` 与模型并行方式相关（具体规则见 `scripts/launch_serve/AGENTS.md`）
+Notes:
+- `MODEL_NAME` must match the model name in the config file
+- `NUM_INSTANCES` depends on the model parallelism setup (see `scripts/launch_serve/AGENTS.md`)

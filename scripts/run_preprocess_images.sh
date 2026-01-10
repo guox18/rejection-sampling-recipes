@@ -12,7 +12,7 @@ cd /mnt/shared-storage-user/songdemin/user/guoxu/public/rejection-sampling-recip
 #   /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Document_QA~unknown~Calligraphy_Recognition_qa_d20241104_jsonl~1.0.0~0.0/jsonl/part-68d5ff1f93bf-000086.jsonl
 
 # gb p1
-## 有个文件有 53w 行: /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Multiple_Image_K12_Comprehensive~zh~k12_merge_ab_zh_20240812~1.0.0~0.0/jsonl/part-68d595016ec7-000086.jsonl
+## One file has 530k lines: /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Multiple_Image_K12_Comprehensive~zh~k12_merge_ab_zh_20240812~1.0.0~0.0/jsonl/part-68d595016ec7-000086.jsonl
 
 # uv run python /mnt/shared-storage-user/songdemin/user/guoxu/public/rejection-sampling-recipes/scripts/preprocess_images.py \
 #   --image-base-dir /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219/intern-multi-modal-h-delivery/internvl_delivery/internvl3_5 \
@@ -28,7 +28,7 @@ cd /mnt/shared-storage-user/songdemin/user/guoxu/public/rejection-sampling-recip
 #   /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~Chart_Markdown~unknown~synthChart_flowchart_md_v1_0_jsonl~1.0.0~0.0/jsonl/part-68d628a12d2e-000086.jsonl
 
 
-## 漏了一个
+## Missed one
 uv run python /mnt/shared-storage-user/songdemin/user/guoxu/public/rejection-sampling-recipes/scripts/preprocess_images.py \
   --image-base-dir /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219/intern-multi-modal-h-delivery/internvl_delivery/internvl3_5 \
   -i /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~unknown~mmmu_wimg_test_subqa_33k_v1_20241127check~1.0.0~0.0/jsonl/part-68d5ed381400-000086.jsonl \
@@ -52,5 +52,4 @@ uv run python /mnt/shared-storage-user/songdemin/user/guoxu/public/rejection-sam
 #   /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p1/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~unknown~high_school_mllm_choice_4~1.0.0~0.0/jsonl/part-68d7cbca21fd-000086.jsonl \
 #   /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p1/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~unknown~high_school_mllm_choice_3~1.0.0~0.0/jsonl/part-68d7cbd81b75-000086.jsonl \
 #   /mnt/shared-storage-user/songdemin/user/guoxu/tanghuanze/local_bak_1219_sunyu_p1/intern-multi-modal-delivery/internvl_delivery/internvl3_5/P~other~unknown~high_school_mllm_choice_2~1.0.0~0.0/jsonl/part-68d7cc9feef7-000086.jsonl
-
 

@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Set, Tuple
 
-# 框架内部字段（由 pipeline 自动保留）
+# Framework internal fields (kept by the pipeline).
 FRAMEWORK_FIELDS: Set[str] = {"_resume_id", "_failed", "_error", "_traceback"}
 
 logger = logging.getLogger(__name__)
@@ -121,33 +121,33 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="清理 JSONL 文件中的框架内部字段",
+        description="Remove framework internal fields from a JSONL file",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-示例:
-  # 清理所有框架字段 (默认)
+Examples:
+  # Remove all framework fields (default)
   python -m src.utils.framework -i input.jsonl -o output.jsonl
 
-  # 清理特定字段
+  # Remove specific fields
   python -m src.utils.framework -i input.jsonl -o output.jsonl -f _resume_id _error
 
-默认清理的字段: """
+Default fields removed: """
         + ", ".join(sorted(FRAMEWORK_FIELDS)),
     )
 
-    parser.add_argument("-i", "--input", required=True, help="输入 JSONL 文件路径")
-    parser.add_argument("-o", "--output", required=True, help="输出 JSONL 文件路径")
+    parser.add_argument("-i", "--input", required=True, help="Input JSONL file path")
+    parser.add_argument("-o", "--output", required=True, help="Output JSONL file path")
     parser.add_argument(
         "-f",
         "--fields",
         nargs="+",
-        help=f"要清理的字段列表（默认: {' '.join(sorted(FRAMEWORK_FIELDS))}）",
+        help=f"Fields to remove (default: {' '.join(sorted(FRAMEWORK_FIELDS))})",
     )
-    parser.add_argument("-q", "--quiet", action="store_true", help="安静模式")
+    parser.add_argument("-q", "--quiet", action="store_true", help="Quiet mode")
 
     args = parser.parse_args()
 
-    # 确定要清理的字段
+    # Determine which fields to remove.
     fields_to_clean = set(args.fields) if args.fields else FRAMEWORK_FIELDS
 
     if not args.quiet:
@@ -156,10 +156,10 @@ if __name__ == "__main__":
         print(f"[Info] Removing fields: {', '.join(sorted(fields_to_clean))}")
         print()
 
-    # 清理文件
+    # Clean the file.
     clean_framework_fields_from_file(
         args.input, args.output, fields=fields_to_clean, verbose=not args.quiet
     )
 
     if not args.quiet:
-        print(f"\n[Done] 已清理: {args.output}")
+        print(f"\n[Done] Cleaned: {args.output}")

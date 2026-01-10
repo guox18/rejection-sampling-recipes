@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 """
-图像路径预处理脚本.
+Image path preprocessing script.
 
-功能:
-1. 读取 JSONL 文件
-2. 为每个包含图像的数据项计算图片的绝对路径
-3. 将绝对路径存储到 meta_info.abs_image_path 字段
-4. 检查图像文件是否存在，不存在的发出告警
-5. 生成新的 JSONL 文件 (xxx_abs.jsonl)
+Functions:
+1. Read JSONL files
+2. Compute absolute image paths for items with images
+3. Store absolute paths in meta_info.abs_image_path (or user-specified field)
+4. Check whether image files exist and warn if missing
+5. Write a new JSONL file (xxx_abs.jsonl)
 
 Usage:
-    # 方式1：直接指定完整图片路径（不需要 doc_loc）
+    # Option 1: provide full image base path directly (no doc_loc needed)
     python scripts/preprocess_images.py \
         --input data/train.jsonl data/test.jsonl \
         --image-base-path /mnt/.../internxx/P~xxx~1.0.0~0.0/multimodal_elements \
         [--abs-image-path-field abs_path]
-    
-    # 方式2：使用基础目录从 doc_loc 推断（需要数据有 doc_loc 字段）
+
+    # Option 2: infer from doc_loc using a base dir (doc_loc required)
     python scripts/preprocess_images.py \
         --input data/train.jsonl data/test.jsonl \
         --image-base-dir /mnt/.../internxx \
@@ -33,30 +33,31 @@ from typing import Optional
 
 def infer_image_base_path_from_doc_loc(doc_loc: str, image_base_dir: str) -> Optional[str]:
     """
-    从 doc_loc 自动推断图片基础路径.
+    Infer image base path from doc_loc.
 
     Args:
-        doc_loc: S3 路径，格式如 "s3://.../P~xxx~1.0.0~0.0_suffix/jsonl/part-001.jsonl"
-        image_base_dir: 图片文件的基础目录
+        doc_loc: S3 path, e.g. "s3://.../P~xxx~1.0.0~0.0_suffix/jsonl/part-001.jsonl"
+        image_base_dir: base directory that contains image files
 
     Returns:
-        图片完整路径，格式如 "{image_base_dir}/P~xxx~1.0.0~0.0/multimodal_elements"
-        如果无法推断则返回 None
+        full image path like "{image_base_dir}/P~xxx~1.0.0~0.0/multimodal_elements",
+        or None if it cannot be inferred
 
-    示例:
-        输入: "s3://.../P~Document_QA~unknown~xxx~1.0.0~0.0_Bo1f7/jsonl/part-001.jsonl"
-        配置: image_base_dir = "/mnt/.../internxx"
-        输出: "/mnt/.../internxx/P~Document_QA~unknown~xxx~1.0.0~0.0/multimodal_elements"
+    Example:
+        input:  "s3://.../P~Document_QA~unknown~xxx~1.0.0~0.0_Bo1f7/jsonl/part-001.jsonl"
+        config: image_base_dir = "/mnt/.../internxx"
+        output: "/mnt/.../internxx/P~Document_QA~unknown~xxx~1.0.0~0.0/multimodal_elements"
 
-    注意:
-        doc_loc 中的数据集名称可能包含随机后缀（如 _Bo1f7-xxx），
-        实际目录名只到版本号为止（~1.0.0~0.0），需要去掉后缀。
+    Note:
+        Dataset names in doc_loc may include random suffixes (e.g. _Bo1f7-xxx).
+        The actual directory name ends at the version (~1.0.0~0.0), so the suffix
+        should be stripped.
     """
     if not image_base_dir:
         return None
 
-    # 正则匹配：提取数据集名称（P~ 开头到版本号为止）
-    # 格式: P~xxx~xxx~xxx~x.x.x~x.x
+    # Regex: extract dataset name (P~... up to version).
+    # Format: P~xxx~xxx~xxx~x.x.x~x.x
     pattern = r"(P~[^/]+?~\d+\.\d+\.\d+~\d+\.\d+)(?:_[^/]+)?/jsonl/"
     match = re.search(pattern, doc_loc)
     if not match:
@@ -70,13 +71,13 @@ def infer_image_base_path_from_doc_loc(doc_loc: str, image_base_dir: str) -> Opt
 
 def has_image_content(item: dict) -> bool:
     """
-    检查数据项是否包含图像内容.
+    Check whether an item contains image content.
 
     Args:
-        item: 数据项
+        item: data item
 
     Returns:
-        True 表示包含图像，False 表示纯文本
+        True if images exist, False if text-only
     """
     for msg in item.get("messages", []):
         if msg.get("role") != "user":
@@ -84,11 +85,11 @@ def has_image_content(item: dict) -> bool:
 
         content = msg.get("content", [])
 
-        # content 可能是字符串（纯文本格式）或列表（结构化格式）
+        # content may be a string (text-only) or a list (structured).
         if isinstance(content, str):
-            continue  # 字符串格式不包含图像
+            continue  # String content has no images.
 
-        # 列表格式：检查是否有 image_url 类型的元素
+        # List content: check for image_url elements.
         for content_item in content:
             if isinstance(content_item, dict) and content_item.get("type") == "image_url":
                 return True
@@ -98,13 +99,13 @@ def has_image_content(item: dict) -> bool:
 
 def extract_image_relative_paths(item: dict) -> list[str]:
     """
-    提取数据项中的所有图像相对路径.
+    Extract all image relative paths from an item.
 
     Args:
-        item: 数据项
+        item: data item
 
     Returns:
-        图像相对路径列表
+        list of relative image paths
     """
     image_paths = []
 
@@ -114,7 +115,7 @@ def extract_image_relative_paths(item: dict) -> list[str]:
 
         content = msg.get("content", [])
 
-        # content 必须是列表格式才可能包含图像
+        # content must be a list to contain images.
         if not isinstance(content, list):
             continue
 
@@ -130,23 +131,23 @@ def extract_image_relative_paths(item: dict) -> list[str]:
 
 def set_nested_field(item: dict, field_path: str, value) -> None:
     """
-    设置嵌套字段的值.
+    Set a nested field value.
 
     Args:
-        item: 数据字典
-        field_path: 字段路径，如 "meta_info.abs_image_path" 或 "abs_path"
-        value: 要设置的值
+        item: data dict
+        field_path: dotted path, e.g. "meta_info.abs_image_path" or "abs_path"
+        value: value to set
     """
     parts = field_path.split(".")
     current = item
 
-    # 遍历到倒数第二层，确保中间字典存在
+    # Walk to the second-to-last level, creating dicts as needed.
     for part in parts[:-1]:
         if part not in current:
             current[part] = {}
         current = current[part]
 
-    # 设置最后一层的值
+    # Set the final field.
     current[parts[-1]] = value
 
 
@@ -158,17 +159,17 @@ def preprocess_file(
     image_base_path: str = None,
 ) -> dict:
     """
-    预处理单个 JSONL 文件.
+    Preprocess a single JSONL file.
 
     Args:
-        input_path: 输入 JSONL 文件路径
-        output_path: 输出 JSONL 文件路径
-        image_base_dir: 图片文件的基础目录（用于从 doc_loc 推断）
-        abs_image_path_field: 存储绝对路径的字段名（支持嵌套）
-        image_base_path: 图片的完整路径（可选，如果指定则不从 doc_loc 推断）
+        input_path: input JSONL file path
+        output_path: output JSONL file path
+        image_base_dir: base directory for images (used to infer from doc_loc)
+        abs_image_path_field: field name to store absolute path (supports nesting)
+        image_base_path: full image base path (optional; if set, skip doc_loc inference)
 
     Returns:
-        统计信息字典
+        stats dict
     """
     stats = {
         "total_items": 0,
@@ -177,7 +178,7 @@ def preprocess_file(
         "total_image_files": 0,
         "image_files_exist": 0,
         "image_files_missing": 0,
-        "missing_image_details": [],  # 存储缺失图像的详细信息
+        "missing_image_details": [],  # Store details of missing images.
     }
 
     with (
@@ -192,35 +193,36 @@ def preprocess_file(
                 item = json.loads(line)
                 stats["total_items"] += 1
 
-                # 检查是否包含图像
+                # Check for images.
                 if not has_image_content(item):
                     stats["items_without_images"] += 1
-                    # 纯文本数据：直接写入，不处理
+                    # Text-only: write as-is.
                     fout.write(json.dumps(item, ensure_ascii=False) + "\n")
                     continue
 
                 stats["items_with_images"] += 1
 
-                # 获取图片基础路径
+                # Get image base path.
                 if image_base_path:
-                    # 用户直接指定了完整路径
+                    # User provided full path.
                     item_image_base_path = image_base_path
                 else:
-                    # 从 doc_loc 推断
+                    # Infer from doc_loc.
                     doc_loc = item.get("doc_loc", "")
                     item_image_base_path = infer_image_base_path_from_doc_loc(
                         doc_loc, image_base_dir
                     )
 
                     if not item_image_base_path:
-                        print(f"⚠️  行 {line_num}: 无法推断图片路径，跳过")
+                        print(f"⚠️  Line {line_num}: cannot infer image path, skipping")
                         print(f"   doc_loc: {doc_loc}")
                         print(
-                            f"   提示: 如果数据没有 doc_loc 字段，请使用 --image-base-path 直接指定完整路径"
+                            "   Tip: if your data has no doc_loc, pass --image-base-path "
+                            "to specify the full path directly"
                         )
                         continue
 
-                # 提取所有图像相对路径
+                # Extract all relative image paths.
                 relative_paths = extract_image_relative_paths(item)
 
                 if not relative_paths:
@@ -229,7 +231,7 @@ def preprocess_file(
                     fout.write(json.dumps(item, ensure_ascii=False) + "\n")
                     continue
 
-                # 检查图像文件是否存在
+                # Check whether image files exist.
                 all_images_exist = True
                 for relative_path in relative_paths:
                     full_path = os.path.join(item_image_base_path, relative_path)
@@ -248,29 +250,29 @@ def preprocess_file(
                             }
                         )
                         all_images_exist = False
-                        print(f"❌ 行 {line_num}: 图像文件不存在")
+                        print(f"❌ Line {line_num}: image file not found")
                         print(f"   ID: {item.get('id', 'unknown')}")
-                        print(f"   相对路径: {relative_path}")
-                        print(f"   完整路径: {full_path}")
+                        print(f"   Relative path: {relative_path}")
+                        print(f"   Full path: {full_path}")
 
-                # 将绝对路径存储到指定字段
+                # Store absolute path in target field.
                 set_nested_field(item, abs_image_path_field, item_image_base_path)
 
-                # 写入输出文件
+                # Write output.
                 fout.write(json.dumps(item, ensure_ascii=False) + "\n")
 
             except json.JSONDecodeError as e:
-                print(f"⚠️  行 {line_num}: JSON 解析错误 - {e}")
+                print(f"⚠️  Line {line_num}: JSON decode error - {e}")
             except Exception as e:
-                print(f"⚠️  行 {line_num}: 处理错误 - {e}")
+                print(f"⚠️  Line {line_num}: processing error - {e}")
 
     return stats
 
 
 def main():
-    """主函数."""
+    """Main entrypoint."""
     parser = argparse.ArgumentParser(
-        description="图像路径预处理脚本：为 JSONL 文件中的数据项添加图片绝对路径",
+        description="Image path preprocessing: add absolute image paths to JSONL items",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
@@ -280,69 +282,72 @@ def main():
         type=str,
         nargs="+",
         required=True,
-        help="输入 JSONL 文件路径（支持多个文件）",
+        help="Input JSONL file paths (supports multiple files)",
     )
     parser.add_argument(
         "--image-base-dir",
         type=str,
         default=None,
-        help="图片文件的基础目录（用于从 doc_loc 推断完整路径），例如 /mnt/.../internxx",
+        help="Base directory for images (infer from doc_loc), e.g. /mnt/.../internxx",
     )
     parser.add_argument(
         "--image-base-path",
         type=str,
         default=None,
-        help="图片的完整路径（如果指定则不从 doc_loc 推断），例如 /mnt/.../internxx/P~xxx~1.0.0~0.0/multimodal_elements",
+        help=(
+            "Full image base path (if set, skip doc_loc inference), "
+            "e.g. /mnt/.../internxx/P~xxx~1.0.0~0.0/multimodal_elements"
+        ),
     )
     parser.add_argument(
         "--abs-image-path-field",
         type=str,
         default="abs_path",
-        help="存储绝对路径的字段名（支持嵌套，如 meta_info.abs_image_path 或 abs_path）",
+        help="Field name to store absolute paths (supports nesting, e.g. meta_info.abs_image_path)",
     )
     parser.add_argument(
         "--output-suffix",
         type=str,
         default="_abs",
-        help="输出文件名后缀，例如 train.jsonl -> train_abs.jsonl",
+        help="Output filename suffix, e.g. train.jsonl -> train_abs.jsonl",
     )
 
     args = parser.parse_args()
 
-    # 检查输入文件
+    # Validate input files.
     input_files = args.input
     for input_file in input_files:
         if not os.path.exists(input_file):
-            print(f"❌ 输入文件不存在: {input_file}")
+            print(f"❌ Input file not found: {input_file}")
             return
 
-    # 检查图片路径配置
+    # Validate image path config.
     if not args.image_base_dir and not args.image_base_path:
-        print(f"❌ 必须指定 --image-base-dir 或 --image-base-path 之一")
+        print("❌ You must specify --image-base-dir or --image-base-path")
         return
 
     if args.image_base_dir and not os.path.exists(args.image_base_dir):
-        print(f"❌ 图片基础目录不存在: {args.image_base_dir}")
+        print(f"❌ Image base dir not found: {args.image_base_dir}")
         return
 
     if args.image_base_path and not os.path.exists(args.image_base_path):
-        print(f"❌ 图片完整路径不存在: {args.image_base_path}")
+        print(f"❌ Image base path not found: {args.image_base_path}")
         return
 
     print("=" * 80)
-    print("图像路径预处理脚本")
+    print("Image Path Preprocessing")
     print("=" * 80)
-    print(f"输入文件数量: {len(input_files)}")
+    print(f"Input files: {len(input_files)}")
     if args.image_base_path:
-        print(f"图片完整路径: {args.image_base_path} (直接指定)")
+        print(f"Image base path: {args.image_base_path} (explicit)")
     else:
-        print(f"图片基础目录: {args.image_base_dir} (从 doc_loc 推断)")
-    print(f"绝对路径字段: {args.abs_image_path_field}")
-    print(f"输出文件后缀: {args.output_suffix}")
+        print(f"Image base dir:  {args.image_base_dir} (inferred from doc_loc)")
+    print(f"Absolute path field: {args.abs_image_path_field}")
+    print(f"Output suffix:        {args.output_suffix}")
     print("=" * 80)
     print()
 
-    # 处理每个文件
+    # Process each file.
     total_stats = {
         "total_items": 0,
         "items_with_images": 0,
@@ -355,17 +360,17 @@ def main():
 
     for input_file in input_files:
         print(f"\n{'=' * 80}")
-        print(f"处理文件: {input_file}")
+        print(f"Processing file: {input_file}")
         print(f"{'=' * 80}")
 
-        # 生成输出文件路径
+        # Build output file path.
         input_path = Path(input_file)
         output_filename = f"{input_path.stem}{args.output_suffix}{input_path.suffix}"
         output_path = input_path.parent / output_filename
 
-        print(f"输出文件: {output_path}")
+        print(f"Output file: {output_path}")
 
-        # 预处理文件
+        # Preprocess file.
         stats = preprocess_file(
             input_path=str(input_path),
             output_path=str(output_path),
@@ -374,56 +379,58 @@ def main():
             image_base_path=args.image_base_path,
         )
 
-        # 打印统计信息
-        print(f"\n文件统计:")
-        print(f"  总数据项:     {stats['total_items']}")
-        print(f"  包含图像:     {stats['items_with_images']}")
-        print(f"  不含图像:     {stats['items_without_images']}")
-        print(f"  图像文件总数: {stats['total_image_files']}")
-        print(f"  图像存在:     {stats['image_files_exist']}")
-        print(f"  图像缺失:     {stats['image_files_missing']}")
+        # Print stats.
+        print("\nFile stats:")
+        print(f"  Total items:     {stats['total_items']}")
+        print(f"  With images:     {stats['items_with_images']}")
+        print(f"  Without images:  {stats['items_without_images']}")
+        print(f"  Total images:    {stats['total_image_files']}")
+        print(f"  Images present:  {stats['image_files_exist']}")
+        print(f"  Images missing:  {stats['image_files_missing']}")
 
         if stats["image_files_missing"] > 0:
-            print(f"\n⚠️  警告: 发现 {stats['image_files_missing']} 个缺失的图像文件")
+            print(f"\n⚠️  Warning: {stats['image_files_missing']} missing image files")
 
-        # 累计统计
+        # Accumulate totals.
         for key in total_stats:
             if key == "missing_image_details":
                 total_stats[key].extend(stats[key])
             else:
                 total_stats[key] += stats[key]
 
-    # 打印总体统计
+    # Print overall stats.
     print(f"\n\n{'=' * 80}")
-    print("总体统计")
+    print("Overall Stats")
     print(f"{'=' * 80}")
-    print(f"总数据项:     {total_stats['total_items']}")
-    print(f"包含图像:     {total_stats['items_with_images']}")
-    print(f"不含图像:     {total_stats['items_without_images']}")
-    print(f"图像文件总数: {total_stats['total_image_files']}")
-    print(f"图像存在:     {total_stats['image_files_exist']}")
-    print(f"图像缺失:     {total_stats['image_files_missing']}")
+    print(f"Total items:     {total_stats['total_items']}")
+    print(f"With images:     {total_stats['items_with_images']}")
+    print(f"Without images:  {total_stats['items_without_images']}")
+    print(f"Total images:    {total_stats['total_image_files']}")
+    print(f"Images present:  {total_stats['image_files_exist']}")
+    print(f"Images missing:  {total_stats['image_files_missing']}")
 
     if total_stats["total_image_files"] > 0:
         exist_rate = 100 * total_stats["image_files_exist"] / total_stats["total_image_files"]
-        print(f"图像存在率:   {exist_rate:.2f}%")
+        print(f"Image existence rate:   {exist_rate:.2f}%")
 
-    # 打印缺失图像详情
+    # Print missing image details.
     if total_stats["missing_image_details"]:
         print(f"\n\n{'=' * 80}")
-        print("缺失图像详情（前 3 条）")
+        print("Missing image details (first 3)")
         print(f"{'=' * 80}")
         for detail in total_stats["missing_image_details"][:3]:
-            print(f"  行 {detail['line']}, ID {detail['item_id']}")
-            print(f"    相对路径: {detail['relative_path']}")
-            print(f"    完整路径: {detail['full_path']}")
+            print(f"  Line {detail['line']}, ID {detail['item_id']}")
+            print(f"    Relative path: {detail['relative_path']}")
+            print(f"    Full path:     {detail['full_path']}")
             print()
 
         if len(total_stats["missing_image_details"]) > 3:
-            print(f"  ... 还有 {len(total_stats['missing_image_details']) - 3} 条缺失记录")
+            print(
+                f"  ... and {len(total_stats['missing_image_details']) - 3} more missing records"
+            )
 
     print(f"\n{'=' * 80}")
-    print("✅ 预处理完成")
+    print("✅ Preprocessing complete")
     print(f"{'=' * 80}")
 
 

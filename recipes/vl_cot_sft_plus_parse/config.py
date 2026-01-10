@@ -1,4 +1,4 @@
-"""SFT Recipe 配置."""
+"""SFT recipe configuration."""
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,9 +8,9 @@ import yaml
 
 @dataclass
 class SFTConfig:
-    """SFT Recipe 默认配置. yaml 中的配置会覆盖这里的配置"""
+    """Default SFT recipe config. YAML values override these defaults."""
 
-    # LLM parser 配置
+    # LLM parser config
     parse_model: str = "qwen"
     parse_base_url: str = None
     parse_api_key: str = "dummy"
@@ -18,7 +18,7 @@ class SFTConfig:
     parse_max_tokens: int = 8096
     parse_max_workers: int = 256
 
-    # 采样配置
+    # Sampling config
     model: str = "qwen"
     base_url: str = None
     api_key: str = None
@@ -27,41 +27,41 @@ class SFTConfig:
     max_tokens: int = 4096
     semaphore_per_sampler: int = 10
 
-    # 数据路径配置
+    # Data path config
     abs_image_path_field: str = (
-        "abs_path"  # 图片绝对路径字段（支持嵌套，如 meta_info.abs_image_path 或 abs_path）
+        "abs_path"  # Absolute image path field (supports nesting, e.g. meta_info.abs_image_path)
     )
-    max_image_size_mb: float = 100.0  # 图像文件大小限制（MB），超过此大小的图像会被标记为 failed
+    max_image_size_mb: float = 100.0  # Max image size (MB); larger images are marked failed
 
-    # LLM Judge 配置
-    judge_model: str = None  # 默认使用 model
-    judge_base_url: str = None  # 默认使用 base_url
-    judge_api_key: str = None  # 默认使用 api_key
+    # LLM judge config
+    judge_model: str = None  # Defaults to model
+    judge_base_url: str = None  # Defaults to base_url
+    judge_api_key: str = None  # Defaults to api_key
     judge_temperature: float = 0.0
     judge_max_tokens: int = 10
-    verifier_max_workers: int = 20  # VerifierStage 线程池大小 (batch 内 item 级别并发)
+    verifier_max_workers: int = 20  # VerifierStage thread pool size (per-item in batch)
 
-    # 格式化配置
+    # Formatting config
     pass_threshold: float = 1.0
 
-    # 重试配置
+    # Retry config
     max_retries: int = 3
 
-    # Pipeline 配置
-    batch_size: int = 4  # 每个 batch 的数据量
-    concurrency: int = 4  # 默认并发度(Stage 的 actor 数量)
-    sampler_concurrency: int = None  # SamplerStage 并发度(默认与 concurrency 相同)
-    verifier_concurrency: int = None  # VerifierStage 并发度(默认与 concurrency 相同)
+    # Pipeline config
+    batch_size: int = 4  # Items per batch
+    concurrency: int = 4  # Default concurrency (stage actor count)
+    sampler_concurrency: int = None  # SamplerStage concurrency (defaults to concurrency)
+    verifier_concurrency: int = None  # VerifierStage concurrency (defaults to concurrency)
 
     @classmethod
     def from_yaml(cls, path: str) -> "SFTConfig":
-        """从 yaml 文件加载配置."""
+        """Load config from a YAML file."""
         with open(path) as f:
             data = yaml.safe_load(f)
         return cls(**data)
 
     def to_yaml(self, path: str):
-        """保存配置到 yaml 文件."""
+        """Save config to a YAML file."""
         data = {k: v for k, v in self.__dict__.items() if v is not None}
         with open(path, "w") as f:
             yaml.dump(data, f, default_flow_style=False)

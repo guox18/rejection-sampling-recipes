@@ -2,13 +2,13 @@
 set -euo pipefail
 
 # ============================================================================
-# 完整工作流示例：通过 rjob 启动服务 -> 运行任务
+# Full workflow example: start services via rjob -> run tasks
 # ============================================================================
 
 echo "=========================================="
 echo ""
 
-# ------------- 配置参数 -------------
+# ------------- Config -------------
 ROUTER_IP="10.102.249.62"
 ROUTER_PORT="21001"
 MODEL_NAME="qwen3_vl_235b_a22b_thinking"
@@ -19,17 +19,17 @@ MODEL_NAME="qwen3_vl_235b_a22b_thinking"
 # ROUTER_PORT="21003"
 # MODEL_NAME="qwen25_32b_instruct"
 
-# ⭐ 重要: NUM_INSTANCES 的含义已改变！
-# - 对于 TP=8 的大模型（如 235B）: NUM_INSTANCES=8 (8个rjob任务，每个任务1个vllm实例)
-# - 对于 TP=1 的小模型（如 30B）:  NUM_INSTANCES=1 (1个rjob任务，自动启动8个vllm实例)
+# ⭐ Important: NUM_INSTANCES meaning has changed!
+# - For TP=8 large models (e.g., 235B): NUM_INSTANCES=8 (8 rjob tasks, 1 vLLM each)
+# - For TP=1 small models (e.g., 30B):  NUM_INSTANCES=1 (1 rjob task, auto starts 8 vLLM)
 NUM_INSTANCES=1
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "Step 1: 通过 rjob 提交 ${NUM_INSTANCES} 个模型服务任务..."
+echo "Step 1: submit ${NUM_INSTANCES} model service tasks via rjob..."
 echo ""
 
-# 提交 rjob 任务（脚本会阻塞直到所有服务就绪）
+# Submit rjob tasks (blocks until all services are ready)
 bash "${SCRIPT_DIR}/submit_rjob_instances.sh" \
   -n ${NUM_INSTANCES} \
   --config model_config_example.yaml \
@@ -37,38 +37,38 @@ bash "${SCRIPT_DIR}/submit_rjob_instances.sh" \
   --router-ip ${ROUTER_IP} \
   --router-port ${ROUTER_PORT}
 
-# 如果上面的命令成功返回，说明所有服务都已启动并注册成功
+# If the command returned successfully, all services are started and registered.
 echo ""
 echo "=========================================="
-echo "Step 2: 运行使用服务的任务..."
+echo "Step 2: run tasks that use the services..."
 echo "=========================================="
 echo ""
 
-# 现在可以安全地运行依赖这些服务的任务
-echo "服务已就绪，开始运行任务..."
-echo "Router 地址: http://${ROUTER_IP}:${ROUTER_PORT}"
+# Now it's safe to run tasks that depend on these services.
+echo "Services are ready. Starting tasks..."
+echo "Router URL: http://${ROUTER_IP}:${ROUTER_PORT}"
 echo ""
 
-# 示例：测试服务是否可用
-echo "测试服务连接..."
+# Example: test service availability
+echo "Testing service connectivity..."
 if curl -sf "http://${ROUTER_IP}:${ROUTER_PORT}/health" >/dev/null; then
-  echo "✓ Router 连接正常"
+  echo "✓ Router reachable"
   echo ""
-  echo "健康状态:"
+  echo "Health status:"
   curl -s "http://${ROUTER_IP}:${ROUTER_PORT}/health"
   echo ""
   echo ""
-  echo "可用模型:"
+  echo "Available models:"
   curl -s "http://${ROUTER_IP}:${ROUTER_PORT}/v1/models" | python3 -m json.tool || true
 else
-  echo "✗ Router 连接失败"
+  echo "✗ Router connection failed"
   exit 1
 fi
 
 echo "=========================================="
-echo "✓ 启动完成！"
+echo "✓ Launch complete!"
 echo "=========================================="
 echo ""
-echo "提示: 任务完成后，记得清理 rjob 任务"
-echo "  查看任务: cat /tmp/vllm_rjobs_${ROUTER_PORT}.txt"
-echo "  停止任务: 参考上面文件中的任务名称，使用 rjob stop <job-name>"
+echo "Note: clean up rjob tasks after completion"
+echo "  View tasks: cat /tmp/vllm_rjobs_${ROUTER_PORT}.txt"
+echo "  Stop tasks: use rjob stop <job-name> (see names in the file above)"

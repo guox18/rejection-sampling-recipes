@@ -25,23 +25,23 @@ logger = logging.getLogger(__name__)
 
 def resize_messages_images(messages: list[dict], max_pixels: int = None) -> list[dict]:
     """
-    对 messages 中的所有图片进行 resize 操作.
+    Resize all images inside messages.
 
     Args:
-        messages: 对话消息列表
-        max_pixels: 最大像素数（默认使用 IMAGE_MAX_TOKEN_NUM * factor^2）
+        messages: chat messages list
+        max_pixels: max pixel count (defaults to IMAGE_MAX_TOKEN_NUM * factor^2)
 
     Returns:
-        处理后的 messages（原地修改并返回）
+        processed messages (modified in place and returned)
     """
-    # 计算默认 max_pixels
+    # Compute default max_pixels.
     patch_factor = int(14 * SPATIAL_MERGE_SIZE)
     if max_pixels is None:
         max_pixels = IMAGE_MAX_TOKEN_NUM * patch_factor**2
     import copy
 
     def to_rgb(image: Image.Image) -> Image.Image:
-        """转换图片为 RGB 格式"""
+        """Convert image to RGB."""
         if image.mode == "RGB":
             return image
         image = image.convert("RGBA")
@@ -53,32 +53,32 @@ def resize_messages_images(messages: list[dict], max_pixels: int = None) -> list
         base64_str: str, max_pixels: int, patch_factor: int, max_base64_kb: int = 800
     ) -> str:
         """
-        处理 base64 编码的图片，保证最终 base64 大小不超过指定值.
+        Process a base64-encoded image and keep the final size under a limit.
 
         Args:
-            base64_str: 原始 base64 字符串
-            max_pixels: 最大像素数（用于初始 resize）
-            patch_factor: patch 因子（必须是倍数）
-            max_base64_kb: 最大 base64 大小（KB），默认 800KB
+            base64_str: original base64 string
+            max_pixels: max pixels (used for initial resize)
+            patch_factor: patch factor (must be a multiple)
+            max_base64_kb: max base64 size in KB (default 800KB)
         """
         try:
-            # 解析 base64 字符串
+            # Parse base64 string.
             if "base64," in base64_str:
                 header, base64_data = base64_str.split("base64,", 1)
             else:
-                return base64_str  # 不是 base64 格式，跳过
+                return base64_str  # Not base64, skip.
 
-            # 解码图片
+            # Decode image.
             data = base64.b64decode(base64_data)
             with BytesIO(data) as bio:
                 image_obj = copy.deepcopy(Image.open(bio))
 
-            # 转换为 RGB
+            # Convert to RGB.
             image = to_rgb(image_obj)
             width, height = image.size
             original_size_mb = len(data) / (1024 * 1024)
 
-            # 计算新的尺寸
+            # Compute new size.
             resized_height, resized_width = smart_resize(
                 height,
                 width,
@@ -87,10 +87,10 @@ def resize_messages_images(messages: list[dict], max_pixels: int = None) -> list
                 max_pixels=max_pixels,
             )
 
-            # Resize 图片
+            # Resize.
             resized_image = image.resize((resized_width, resized_height))
 
-            # 动态调整 JPEG 质量，确保 base64 大小不超限
+            # Adjust JPEG quality to keep base64 size under the limit.
             max_base64_bytes = max_base64_kb * 1024
             quality = 85
             attempts = 0
@@ -100,11 +100,11 @@ def resize_messages_images(messages: list[dict], max_pixels: int = None) -> list
                 resized_image.save(buffer, format="JPEG", quality=quality)
                 jpeg_bytes = buffer.getvalue()
 
-                # Base64 编码后大小约为原始大小的 4/3
+                # Base64 size is roughly 4/3 of the binary size.
                 estimated_base64_size = len(jpeg_bytes) * 4 / 3
 
                 if estimated_base64_size <= max_base64_bytes:
-                    # 满足大小要求
+                    # Size is within limit.
                     jpeg_size_kb = len(jpeg_bytes) / 1024
                     new_base64_data = base64.b64encode(jpeg_bytes).decode()
                     base64_size_kb = len(new_base64_data) / 1024
@@ -117,11 +117,11 @@ def resize_messages_images(messages: list[dict], max_pixels: int = None) -> list
 
                     return f"data:image/jpeg;base64,{new_base64_data}"
 
-                # 如果太大，降低质量重试
+                # Too large: lower quality and retry.
                 quality -= 10
                 attempts += 1
 
-            # 如果质量降到很低仍然太大，最后一次尝试用 quality=20
+            # Still too large: last attempt with quality=20.
             buffer = BytesIO()
             resized_image.save(buffer, format="JPEG", quality=20)
             jpeg_bytes = buffer.getvalue()
@@ -140,7 +140,7 @@ def resize_messages_images(messages: list[dict], max_pixels: int = None) -> list
             logger.warning(f"Failed to resize image: {e}, keeping original")
             return base64_str
 
-    # 遍历 messages 并处理图片
+    # Walk messages and process images.
     for message in messages:
         if not isinstance(message, dict):
             continue
@@ -149,19 +149,19 @@ def resize_messages_images(messages: list[dict], max_pixels: int = None) -> list
         if not content:
             continue
 
-        # 如果 content 是列表（多模态消息）
+        # If content is a list (multimodal message).
         if isinstance(content, list):
             for item in content:
                 if not isinstance(item, dict):
                     continue
 
-                # 检查是否是图片
+                # Check for image.
                 if item.get("type") == "image_url":
                     image_url = item.get("image_url", {})
                     if isinstance(image_url, dict):
                         url = image_url.get("url", "")
                         if url.startswith("data:image") and "base64," in url:
-                            # 处理 base64 图片
+                            # Process base64 image.
                             new_url = process_base64_image(url, max_pixels, patch_factor)
                             image_url["url"] = new_url
 
@@ -170,19 +170,19 @@ def resize_messages_images(messages: list[dict], max_pixels: int = None) -> list
 
 def _restore_image_urls(messages: list, original_urls: list) -> list:
     """
-    将 messages 中的 base64 图像 URL 恢复为原始相对路径.
+    Restore base64 image URLs back to original relative paths in messages.
 
     Args:
-        messages: 包含 base64 图像的消息列表
-        original_urls: 原始的相对路径列表
+        messages: message list containing base64 images
+        original_urls: original relative paths
 
     Returns:
-        恢复相对路径后的消息列表
+        messages with restored relative paths
     """
     if not original_urls:
         return messages
 
-    # 复制 messages 避免修改原始数据
+    # Copy messages to avoid mutating originals.
     restored_messages = []
     url_index = 0
 
@@ -190,18 +190,18 @@ def _restore_image_urls(messages: list, original_urls: list) -> list:
         restored_msg = {"role": msg["role"]}
         content = msg.get("content")
 
-        # 如果是 user 消息且 content 是列表（可能包含图像）
+        # If user message and content is a list (may contain images).
         if msg.get("role") == "user" and isinstance(content, list):
             restored_content = []
             for content_item in content:
                 if isinstance(content_item, dict) and content_item.get("type") == "image_url":
-                    # 恢复为原始相对路径
+                    # Restore original relative path.
                     if url_index < len(original_urls):
                         restored_item = {
                             "type": "image_url",
                             "image_url": {"url": original_urls[url_index]},
                         }
-                        # 保留 image_wh 信息（如果原始数据有的话）
+                        # Keep image_wh if present in original data.
                         image_url_data = content_item.get("image_url", {})
                         if "image_wh" in image_url_data:
                             restored_item["image_url"]["image_wh"] = image_url_data["image_wh"]
@@ -209,13 +209,13 @@ def _restore_image_urls(messages: list, original_urls: list) -> list:
                         restored_content.append(restored_item)
                         url_index += 1
                     else:
-                        # 如果没有对应的原始 URL，保持原样
+                        # If no matching original URL, keep as-is.
                         restored_content.append(content_item)
                 else:
                     restored_content.append(content_item)
             restored_msg["content"] = restored_content
         else:
-            # 非 user 消息或纯文本，直接复制
+            # Non-user message or plain text: copy directly.
             restored_msg["content"] = content
 
         restored_messages.append(restored_msg)
@@ -253,13 +253,14 @@ def extract_question_text(messages: list[dict]) -> str:
 
 class DataConverterStage(Stage):
     """
-    数据格式转换阶段：将原始数据转换为 SFT 训练格式.
+    """
+    Data conversion stage: convert raw data into SFT training format.
 
-    支持的输入格式：
-    1. 多模态数据（带图像）
-    2. 纯文本数据（不带图像）
+    Supported input formats:
+    1. Multimodal data (with images)
+    2. Text-only data (no images)
 
-    输入格式示例 1 - 多模态数据:
+    Example input 1 - multimodal:
     {
         "id": -1,
         "messages": [
@@ -267,58 +268,58 @@ class DataConverterStage(Stage):
                 "role": "user",
                 "content": [
                     {"type": "image_url", "image_url": {"url": "image.jpg", "image_wh": [1000,1000]}},
-                    {"type": "text", "text": "<IMG_CONTEXT>\n问题文本"}
+                    {"type": "text", "text": "<IMG_CONTEXT>\\nquestion text"}
                 ]
             },
-            {"role": "assistant", "content": "答案"}
+            {"role": "assistant", "content": "answer"}
         ],
         "doc_loc": "s3://.../P~xxx~1.0.0~0.0/jsonl/part-001.jsonl"
     }
 
-    输入格式示例 2 - 纯文本数据:
+    Example input 2 - text-only:
     {
         "id": 123,
         "messages": [
-            {"role": "user", "content": "问题文本"},
-            {"role": "assistant", "content": "答案"}
+            {"role": "user", "content": "question text"},
+            {"role": "assistant", "content": "answer"}
         ],
         "doc_loc": "s3://..."
     }
 
-    转换规则:
-    1. 对于多模态数据：读取本地图片文件并编码为 base64（保持 OpenAI 格式以兼容 vLLM API）
-    2. 对于纯文本数据：将字符串格式转换为标准的 content 列表格式
-    3. 移除 <IMG_CONTEXT> 标记
-    4. 提取 assistant 的回答到 metadata.answer
-    5. 只保留 user 消息
-    6. 保留原始的 image_wh 信息（如果存在）
+    Conversion rules:
+    1. Multimodal: read local image files and encode to base64 (OpenAI format for vLLM).
+    2. Text-only: convert string content to the standard content list format.
+    3. Remove <IMG_CONTEXT> marker.
+    4. Extract assistant answer into metadata.answer.
+    5. Keep only user messages.
+    6. Preserve original image_wh if present.
 
-    输出格式:
+    Output format:
     {
         "id": "xxx",
         "messages": [
             {
                 "role": "user",
                 "content": [
-                    {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,...", "image_wh": [w, h]}},  # 如果有图像
-                    {"type": "text", "text": "问题文本"}
+                    {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,...", "image_wh": [w, h]}},  # if image present
+                    {"type": "text", "text": "question text"}
                 ]
             }
         ],
-        "metadata": {"answer": "答案"}
+        "metadata": {"answer": "answer"}
     }
     """
 
     def __init__(self, config: SFTConfig):
         """
-        初始化数据转换器.
+        Initialize the data converter.
 
         Args:
-            config: SFT 配置对象，包含图片路径等配置
+            config: SFT config with image path settings
 
-        图片路径配置优先级:
-            1. image_base_path: 完整路径，所有数据集共用
-            2. image_base_dir: 基础目录，为每个数据集动态推断完整路径
+        Image path config priority:
+            1. image_base_path: full path shared by all datasets
+            2. image_base_dir: base dir to infer full paths per dataset
         """
         self.config = config
         self.abs_image_path_field = config.abs_image_path_field
@@ -327,43 +328,43 @@ class DataConverterStage(Stage):
         self, content_item: dict, image_base_path: str
     ) -> tuple[dict, str, str]:
         """
-        将 image_url 格式转换为 base64 编码格式.
+        Convert image_url content to base64 data URL format.
 
-        读取本地图片文件并编码为 base64，兼容 vLLM API endpoint.
-        同时保留原始的 image_wh 信息（图片宽高）。
+        Reads local image files and encodes them to base64 (OpenAI format for vLLM).
+        Preserves original image_wh (width/height).
 
         Args:
             content_item: {"type": "image_url", "image_url": {"url": "...", "image_wh": [w, h]}}
-            image_base_path: 图片基础路径（绝对路径）
+            image_base_path: image base path (absolute)
 
         Returns:
             tuple: (converted_content_item, full_image_path, relative_path)
                 - converted_content_item: {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,...", "image_wh": [w, h]}}
-                - full_image_path: 图像文件的完整路径（用于调试）
-                - relative_path: 原始的相对路径（用于最终输出恢复）
+                - full_image_path: full image path (for debugging)
+                - relative_path: original relative path (for output restore)
 
         Raises:
-            ValueError: 如果图片路径未提供或图像文件过大
-            FileNotFoundError: 如果图片文件不存在
+            ValueError: if image path is missing or image file is too large
+            FileNotFoundError: if image file does not exist
         """
         import base64
         import mimetypes
 
         if not image_base_path:
             raise ValueError(
-                "遇到图像数据但未提供图片绝对路径。\n"
-                "请先运行 preprocess_images.py 脚本为数据添加绝对路径信息。"
+                "Image data found but no absolute image path provided.\n"
+                "Run preprocess_images.py to add absolute image paths first."
             )
 
         image_url_data = content_item.get("image_url", {})
         relative_path = image_url_data.get("url", "")
         full_path = os.path.join(image_base_path, relative_path)
 
-        # 检查文件是否存在
+        # Check file exists.
         if not os.path.isfile(full_path):
             raise FileNotFoundError(f"Image file not found: {full_path}")
 
-        # 检查图像文件大小（避免过大的图像导致输出过长）
+        # Check file size (avoid overly large images).
         file_size = os.path.getsize(full_path)
         max_image_size = getattr(self.config, "max_image_size_mb", 10) * 1024 * 1024
         if file_size > max_image_size:
@@ -375,29 +376,29 @@ class DataConverterStage(Stage):
                 f"Large images may cause output to be too long or exceed token limits."
             )
 
-        # 读取图像文件
+        # Read image file.
         with open(full_path, "rb") as f:
             image_data = f.read()
 
-        # 编码为 base64
+        # Encode to base64.
         base64_encoded = base64.b64encode(image_data).decode("utf-8")
 
-        # 推断 MIME 类型
+        # Infer MIME type.
         mime_type, _ = mimetypes.guess_type(full_path)
         if mime_type is None:
-            # 默认使用 jpeg
+            # Default to jpeg.
             mime_type = "image/jpeg"
 
-        # 保留原始的 image_wh 信息（如果有）
+        # Preserve original image_wh if present.
         image_wh = image_url_data.get("image_wh")
 
-        # 返回 base64 编码的 data URL、完整路径和相对路径
+        # Return base64 data URL, full path, and relative path.
         converted_item = {
             "type": "image_url",
             "image_url": {"url": f"data:{mime_type};base64,{base64_encoded}"},
         }
 
-        # 如果原始数据包含尺寸信息，保留它
+        # Keep size info if provided in the original data.
         if image_wh:
             converted_item["image_url"]["image_wh"] = image_wh
 
@@ -405,16 +406,16 @@ class DataConverterStage(Stage):
 
     def _normalize_text_content(self, content_item: dict) -> dict:
         """
-        标准化文本内容，移除特殊标记.
+        Normalize text content and remove special markers.
 
         Args:
             content_item: {"type": "text", "text": "..."}
 
         Returns:
-            处理后的文本 content
+            normalized text content
         """
         text = content_item.get("text", "")
-        # 移除 <IMG_CONTEXT> 标记
+        # Remove <IMG_CONTEXT> marker.
         text = text.replace("<IMG_CONTEXT>\n", "").strip()
 
         return {"type": "text", "text": text}
@@ -423,29 +424,29 @@ class DataConverterStage(Stage):
         self, content, image_base_path: str = None
     ) -> tuple[list, list, list]:
         """
-        处理 user 消息的 content 字段.
+        Process the content field of a user message.
 
         Args:
-            content: 可能是字符串或列表
-            image_base_path: 图片基础路径（如果包含图像）
+            content: may be a string or list
+            image_base_path: image base path (if images are present)
 
         Returns:
             tuple: (content_list, image_paths, relative_paths)
-                - content_list: 标准化的 content 列表
-                - image_paths: 图像文件完整路径列表（用于调试）
-                - relative_paths: 原始的相对路径列表（用于最终输出恢复）
+                - content_list: normalized content list
+                - image_paths: full image paths (for debugging)
+                - relative_paths: original relative paths (for output restore)
         """
-        # 情况1：纯文本格式（字符串）
+        # Case 1: plain text string.
         if isinstance(content, str):
             return [{"type": "text", "text": content}], [], []
 
-        # 情况2：结构化格式（列表）
+        # Case 2: structured list.
         new_content = []
         image_paths = []
         relative_paths = []
         for content_item in content:
             if not isinstance(content_item, dict):
-                continue  # 跳过非字典元素
+                continue  # Skip non-dict items.
 
             content_type = content_item.get("type")
 
@@ -459,32 +460,32 @@ class DataConverterStage(Stage):
             elif content_type == "text":
                 new_content.append(self._normalize_text_content(content_item))
             else:
-                # 保留其他类型
+                # Keep other types.
                 new_content.append(content_item)
 
         return new_content, image_paths, relative_paths
 
     def process(self, batch: list[dict]) -> list[dict]:
-        """先恢复图片 URL，再沿用基类的异常处理."""
+        """Restore image URLs first, then use base class error handling."""
         restored_batch = [restore_original_images_in_place(item) for item in batch]
         return self._default_sync_process(restored_batch)
 
     def process_item(self, item: dict) -> dict:
         """
-        处理单个数据项，转换为 SFT 训练格式.
+        Process one item and convert it to SFT training format.
 
         Args:
-            item: 原始数据项（预处理后应包含绝对路径信息）
+            item: raw item (should include absolute image path after preprocessing)
 
         Returns:
-            转换后的数据项
+            converted item
 
         Raises:
-            ValueError: 如果包含图像但绝对路径字段不存在
+            ValueError: if images exist but absolute path field is missing
         """
         if should_skip_for_final_output(item):
             return item
-        # 1. 获取图片绝对路径（从配置的字段读取）
+        # 1. Get absolute image base path (from configured field).
         image_base_path = get_nested_value(item, self.abs_image_path_field)
 
         result = {
@@ -495,13 +496,13 @@ class DataConverterStage(Stage):
         if item.get("abs_path") is not None:
             result["abs_path"] = item.get("abs_path")
 
-        # 3. 提取 assistant 的回答到 metadata
-        # 如果 metadata 中已经有 answer，优先使用已有的
+        # 3. Extract assistant answer into metadata.
+        # If metadata already has answer, prefer it.
         existing_answer = (item.get("metadata") or {}).get("answer")
         if existing_answer:
             result["metadata"]["answer"] = existing_answer
         else:
-            # 否则从 messages 中提取
+            # Otherwise extract from messages.
             for msg in item.get("messages", []):
                 if msg.get("role") == "assistant":
                     answer = msg.get("content", "")
@@ -509,7 +510,7 @@ class DataConverterStage(Stage):
                         result["metadata"]["answer"] = answer
                     break
 
-        # 4. 处理 user 消息，收集图像路径和相对路径
+        # 4. Process user messages, collecting image paths and relative paths.
         all_image_paths = []
         all_relative_paths = []
         for msg in item.get("messages", []):
@@ -523,31 +524,32 @@ class DataConverterStage(Stage):
 
                 result["messages"].append({"role": "user", "content": new_content})
 
-        # 5. 将图像路径和相对路径保存到 metadata
+        # 5. Store image paths and relative paths in metadata.
         if all_image_paths:
-            result["metadata"]["image_paths"] = all_image_paths  # 用于调试
+            result["metadata"]["image_paths"] = all_image_paths  # For debugging.
         if all_relative_paths:
-            result["metadata"]["original_image_urls"] = all_relative_paths  # 用于最终输出恢复
+            result["metadata"]["original_image_urls"] = all_relative_paths  # For output restore.
 
         return result
 
 
 # ============================================================
-# 示例 2: 多线程模式 - 使用装饰器
+# Example 2: threaded mode via decorator
 # ============================================================
 
 
 @Stage.threaded_mode
 class ParseStage(Stage):
     """
-    解析阶段: 解析答案.
+    Parsing stage: parse the answer.
 
-    通过条件: 只要 metadata.short_answer 字段存在, 就跳过
+    Skip condition: if metadata.short_answer exists, skip.
 
-    输出:
-        对 answer 进行解析, 得到 short_answer. 仅改变 verify 的行为, 不影响失败处理 (保留原始的 answer, 相对长一些)
+    Output:
+        Parse answer to short_answer. This only affects verification behavior
+        and does not change failure handling (keeps the original, longer answer).
 
-    与后续管线: verify 使用 metadata.short_answer 来进行验证, 而非 metadata.answer
+    Downstream: verify uses metadata.short_answer, not metadata.answer.
     """
 
     def __init__(self, config: SFTConfig):
@@ -556,13 +558,13 @@ class ParseStage(Stage):
 
     def initialize(self):
         """
-        Actor 创建时调用一次, 设置线程池大小并初始化客户端.
+        Called once when the actor is created; set thread pool size and init client.
 
-        通过设置 self._thread_pool_size 指定线程池大小.
+        Set thread pool size via self._thread_pool_size.
         """
-        self._thread_pool_size = self.config.verifier_max_workers  # 直接和 verifier 共用一组模型.
+        self._thread_pool_size = self.config.verifier_max_workers  # Reuse verifier model.
 
-        # 初始化同步客户端
+        # Initialize sync client.
         api_key = self.config.judge_api_key or self.config.api_key
         base_url = self.config.judge_base_url or self.config.base_url
 
@@ -571,18 +573,18 @@ class ParseStage(Stage):
 
     def process_item(self, item: dict) -> dict:
         """
-        处理单个 item, 为所有 responses 打分.
+        Process a single item and parse short_answer.
 
-        框架保证:
-        - 自动用线程池并发处理 batch 内的 item (由 verifier_max_workers 控制)
-        - 自动捕获异常, 失败的 item 标记 _failed=True
-        - 失败的 item 会被框架自动跳过, 不会进入 process_item 方法
-        - 无需手动 try-catch
+        Framework guarantees:
+        - thread pool concurrency within batch (verifier_max_workers)
+        - automatic exception capture; failed items marked _failed=True
+        - failed items are skipped before process_item
+        - no manual try-catch needed
         """
         if should_skip_for_final_output(item):
             return item
 
-        # 如果已经有 short answer, 跳过
+        # Skip if short_answer already exists.
         if (item.get("metadata") or {}).get("short_answer") is not None:
             return item
 
@@ -599,7 +601,7 @@ class ParseStage(Stage):
         return item
 
     def _call_parse(self, prompt: str) -> str:
-        """调用 parse model."""
+        """Call parse model."""
         return self.client.chat_completion(
             messages=[{"role": "user", "content": prompt}],
             model=self.config.parse_model,
@@ -608,10 +610,10 @@ class ParseStage(Stage):
         )
 
 
-# 实现异步采样
+# Async sampling
 class SamplerStage(Stage):
     """
-    采样阶段: 为每个 item 生成 n 个 responses.
+    Sampling stage: generate n responses per item.
     """
 
     def __init__(self, config: SFTConfig):
@@ -619,7 +621,7 @@ class SamplerStage(Stage):
         self.client: AsyncOpenAIClient = None
 
     def initialize(self):
-        """Actor 创建时调用一次, 创建共享的客户端配置."""
+        """Called once when actor is created; build shared client config."""
         self.client = AsyncOpenAIClient(
             api_key=self.config.api_key,
             base_url=self.config.base_url,
@@ -629,16 +631,16 @@ class SamplerStage(Stage):
 
     async def process(self, batch: list[dict]) -> list[dict]:
         """
-        处理一个 batch，在 batch 级别创建和管理 session.
+        Process a batch; create and manage the session at batch scope.
         """
-        # 创建 batch 级别的 session 和 semaphore
-        timeout = aiohttp.ClientTimeout(total=1800)  # 30分钟总超时
+        # Create batch-level session and semaphore.
+        timeout = aiohttp.ClientTimeout(total=1800)  # 30-minute total timeout
         async with aiohttp.ClientSession(timeout=timeout) as session:
             semaphore = asyncio.Semaphore(self.client.semaphore_size)
 
-            # 并发处理 batch 内的所有 items
+            # Process all items concurrently within the batch.
             async def process_one(item: dict) -> dict:
-                # 如果已经失败，直接返回
+                # If already failed, return as-is.
                 if item.get("_failed") is True:
                     return item
 
@@ -649,8 +651,8 @@ class SamplerStage(Stage):
                 item_id = item.get("id", "unknown")
 
                 try:
-                    # 第一次尝试：正常调用 API
-                    # 注意：tools.py 会自动处理除 413 外的所有错误重试
+                    # First attempt: normal API call.
+                    # tools.py retries all errors except 413 automatically.
                     responses = await self.client.chat_completion(
                         session=session,
                         semaphore=semaphore,
@@ -670,25 +672,25 @@ class SamplerStage(Stage):
 
                     error_str = str(e)
 
-                    # 只处理 413 错误（请求太长）：resize 图片后重试
+                    # Only handle 413 (request too large): resize images and retry.
                     if "413" in error_str:
                         logger.warning(
                             f"[SamplerStage] Item {item_id}: 413, resizing images and retrying..."
                         )
                         try:
-                            # 计算更激进的 resize 参数
+                            # Compute more aggressive resize parameters.
                             patch_factor = int(14 * SPATIAL_MERGE_SIZE)
                             aggressive_max_pixels = (IMAGE_MAX_TOKEN_NUM // 2) * patch_factor**2
                             logger.info(
                                 f"[SamplerStage] Item {item_id}: Using aggressive resize with max_pixels={aggressive_max_pixels}"
                             )
 
-                            # Resize 图片
+                            # Resize images.
                             resized_messages = resize_messages_images(
                                 messages, max_pixels=aggressive_max_pixels
                             )
 
-                            # 重试一次
+                            # Retry once.
                             responses = await self.client.chat_completion(
                                 session=session,
                                 semaphore=semaphore,
@@ -702,11 +704,11 @@ class SamplerStage(Stage):
                                 f"[SamplerStage] Item {item_id}: Retry successful after resizing, generated {len(responses)} responses"
                             )
 
-                            # 更新 item 中的 messages 为 resized 版本
+                            # Update item messages with resized version.
                             return {**item, "messages": resized_messages, "responses": responses}
 
                         except Exception as retry_e:
-                            # Resize 后仍然失败
+                            # Still failed after resize.
                             error_trace = traceback.format_exc()
                             logger.error(
                                 f"[SamplerStage] ❌ Item {item_id} failed after resizing: {retry_e}\n{error_trace}"
@@ -719,7 +721,7 @@ class SamplerStage(Stage):
                             }
 
                     else:
-                        # 其他错误（500, 104 等）已经在 tools.py 中重试过了，直接标记失败
+                        # Other errors (500, 104, etc.) already retried in tools.py.
                         error_trace = traceback.format_exc()
                         logger.error(
                             f"[SamplerStage] ❌ Item {item_id} failed (already retried in client): {e}\n{error_trace}"
@@ -735,19 +737,19 @@ class SamplerStage(Stage):
 
 
 # ============================================================
-# 示例 2: 多线程模式 - 使用装饰器
+# Example 2: threaded mode via decorator
 # ============================================================
 
 
 @Stage.threaded_mode
 class VerifierStage(Stage):
     """
-    验证阶段: 使用 LLM-as-Judge 为每个 response 打分.
+    Verification stage: use an LLM-as-Judge to score each response.
 
-    模式: 多线程
-    - 使用 @Stage.threaded_mode 装饰器
-    - 在 initialize() 中通过设置 self._thread_pool_size 指定线程池大小
-    - 实现 process_item(), 框架自动并发处理 batch 内的多个 item
+    Mode: threaded
+    - use @Stage.threaded_mode
+    - set self._thread_pool_size in initialize()
+    - implement process_item(); framework handles per-item concurrency
     """
 
     def __init__(self, config: SFTConfig):
@@ -756,13 +758,13 @@ class VerifierStage(Stage):
 
     def initialize(self):
         """
-        Actor 创建时调用一次, 设置线程池大小并初始化客户端.
+        Called once when actor is created; set thread pool size and init client.
 
-        通过设置 self._thread_pool_size 指定线程池大小.
+        Set thread pool size via self._thread_pool_size.
         """
         self._thread_pool_size = self.config.verifier_max_workers
 
-        # 初始化同步客户端
+        # Initialize sync client.
         api_key = self.config.judge_api_key or self.config.api_key
         base_url = self.config.judge_base_url or self.config.base_url
 
@@ -771,13 +773,13 @@ class VerifierStage(Stage):
 
     def process_item(self, item: dict) -> dict:
         """
-        处理单个 item, 为所有 responses 打分.
+        Process a single item and score all responses.
 
-        框架保证:
-        - 自动用线程池并发处理 batch 内的 item (由 verifier_max_workers 控制)
-        - 自动捕获异常, 失败的 item 标记 _failed=True
-        - 失败的 item 会被框架自动跳过, 不会进入 process_item 方法
-        - 无需手动 try-catch
+        Framework guarantees:
+        - thread pool concurrency within batch (verifier_max_workers)
+        - automatic exception capture; failed items marked _failed=True
+        - failed items are skipped before process_item
+        - no manual try-catch needed
         """
         if should_skip_for_final_output(item):
             return item
@@ -791,16 +793,16 @@ class VerifierStage(Stage):
 
         question = extract_question_text(messages)
 
-        # 验证所有 responses, 并返回第一条 judge 提示词和输出用于调试
+        # Verify all responses and return the first judge prompt/output for debugging.
         rollouts, first_judge_prompt, first_judge_output = self._verify_llm_judge(
             responses, metadata, question
         )
 
-        # 返回结果（排除 responses 字段）
+        # Build result (exclude responses field).
         result = {k: v for k, v in item.items() if k != "responses"}
         result["rollouts"] = rollouts
 
-        # 确保 metadata 是字典而不是 None（防止下游 Stage 出错）
+        # Ensure metadata is a dict to avoid downstream errors.
         if result.get("metadata") is None:
             logger.warning(
                 f"[VerifierStage][BUG] Item {item_id}: metadata is None, setting to empty dictionary"
@@ -808,7 +810,7 @@ class VerifierStage(Stage):
             logger.warning(f"item: {item}")
             result["metadata"] = {}
 
-        # 保存第一条 judge 提示词和输出到 metadata (用于调试)
+        # Save first judge prompt/output to metadata (debugging).
         if first_judge_prompt is not None:
             result["metadata"]["judge_prompt_sample"] = first_judge_prompt
             result["metadata"]["judge_output_sample"] = first_judge_output
@@ -819,15 +821,15 @@ class VerifierStage(Stage):
         self, responses: list[str], metadata: dict, question: str
     ) -> tuple[list[dict], str, str]:
         """
-        使用 LLM Judge 验证多个 responses.
+        Use LLM judge to verify multiple responses.
 
-        对 1 个 item 的 N 个 responses, 顺序调用 judge 验证.
+        For one item, call the judge sequentially for N responses.
 
         Returns:
             tuple: (rollouts, first_judge_prompt, first_judge_output)
-                - rollouts: 验证结果列表
-                - first_judge_prompt: 第一条 judge 提示词 (用于调试)
-                - first_judge_output: 第一条 judge 输出结果 (用于调试)
+                - rollouts: verification results
+                - first_judge_prompt: first judge prompt (debugging)
+                - first_judge_output: first judge output (debugging)
         """
         if not responses:
             return [], None, None
@@ -865,7 +867,7 @@ class VerifierStage(Stage):
                 score = 0.0
                 judge_output = f"ERROR: {e}\n\nTraceback:\n{error_trace}"
             finally:
-                # 保存第一条提示词和输出用于调试
+                # Save the first prompt/output for debugging.
                 if idx == 0:
                     first_judge_prompt = prompt
                     first_judge_output = judge_output
@@ -875,7 +877,7 @@ class VerifierStage(Stage):
         return rollouts, first_judge_prompt, first_judge_output
 
     def _call_judge(self, prompt: str) -> str:
-        """调用 judge model."""
+        """Call the judge model."""
         model = self.config.judge_model or self.config.model
         return self.client.chat_completion(
             messages=[{"role": "user", "content": prompt}],
@@ -885,7 +887,7 @@ class VerifierStage(Stage):
         )
 
     def _parse_judge_output(self, output: str) -> bool:
-        """解析 judge 输出 (A=正确, B=错误)."""
+        """Parse judge output (A=correct, B=incorrect)."""
         if not output:
             return False
         cleaned = output.strip().lower()
@@ -898,31 +900,31 @@ class VerifierStage(Stage):
 
 
 # ============================================================
-# 示例 3: 同步模式 - 只实现 process_item (推荐)
+# Example 3: sync mode - only implement process_item (recommended)
 # ============================================================
 
 
 class FormatterStage(Stage):
     """
-    格式化阶段: 选择通过验证的 response, 输出 SFT 格式.
+    Formatting stage: select verified responses and emit SFT format.
 
-    模式: 同步
-    - 只实现 process_item()
-    - 框架自动处理异常, 顺序执行
-    - 适合: 轻量计算, 无需并发
+    Mode: sync
+    - implement process_item() only
+    - framework handles exceptions and runs sequentially
+    - suitable for light compute with no extra concurrency
     """
 
     def __init__(self, config: SFTConfig):
         self.config = config
 
     def process(self, batch: list[dict]) -> list[dict]:
-        """恢复图片 URL 后使用基类的异常处理."""
+        """Restore image URLs then use base class error handling."""
         restored_batch = [restore_original_images_in_place(item) for item in batch]
         return self._default_sync_process(restored_batch)
 
     def process_item(self, item: dict) -> dict:
         """
-        处理单个 item, 格式化为 SFT 训练数据.
+        Process a single item and format it for SFT training.
         """
         if should_skip_for_final_output(item):
             logger.info(
@@ -936,23 +938,23 @@ class FormatterStage(Stage):
         metadata = item.get("metadata", {})
         item_id = item.get("id", "unknown")
 
-        # 选择通过验证的 responses
+        # Select responses that passed verification.
         passed = [r for r in rollouts if r.get("score", 0) >= self.config.pass_threshold]
         logger.info(f"[FormatterStage] Item {item_id}: {len(passed)}/{len(rollouts)} passed")
 
-        # 选择 best response
+        # Choose the best response.
         if passed:
             best_response = passed[0]["response"]
             used_gt = False
         else:
-            # 回退到 ground truth
+            # Fallback to ground truth.
             gt = metadata.get("answer") or metadata.get("gold_target", "")
             if gt:
                 best_response = gt
                 used_gt = True
                 logger.info(f"[FormatterStage] Item {item_id}: Using ground truth")
             else:
-                # 主动标记失败
+                # Mark as failed.
                 logger.warning(f"[FormatterStage] Item {item_id}: No valid response")
                 return {
                     **item,
@@ -960,10 +962,10 @@ class FormatterStage(Stage):
                     "_error": "No response passed and no ground truth",
                 }
 
-        # 构建 SFT 格式
+        # Build SFT format.
         sft_messages = messages + [{"role": "assistant", "content": best_response}]
 
-        # 清理 metadata（移除内部调试信息）
+        # Clean metadata (remove internal debug fields).
         clean_metadata = {
             k: v
             for k, v in metadata.items()
@@ -990,13 +992,13 @@ class FormatterStage(Stage):
             "metadata": clean_metadata,
         }
 
-        # 输出前确保 id / messages / metadata 按顺序排列
+        # Ensure id/messages/metadata are ordered before output.
         ordered_result = {
             "id": result["id"],
             "messages": result["messages"],
             "metadata": result["metadata"],
         }
-        # 添加其他字段（除了已经包含的 id, messages, metadata）
+        # Add other fields (besides id, messages, metadata).
         for key in result:
             if key not in ["id", "messages", "metadata"]:
                 ordered_result[key] = result[key]
@@ -1005,12 +1007,12 @@ class FormatterStage(Stage):
 
 
 # ============================================================
-# Recipe 定义
+# Recipe definition
 # ============================================================
 
 
 class SFTRecipe(BaseRecipe):
-    """ """
+    """SFT recipe."""
 
     config_class = SFTConfig
 
@@ -1018,7 +1020,7 @@ class SFTRecipe(BaseRecipe):
         super().__init__(config)
 
     def stages(self) -> list[Stage]:
-        """返回 Stage 列表 (按执行顺序)."""
+        """Return stage list (execution order)."""
         return [
             DataConverterStage(self.config),
             ParseStage(self.config),

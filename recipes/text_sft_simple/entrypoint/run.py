@@ -37,17 +37,19 @@ current_processing_file = None
 def signal_handler(signum, frame):
     """Handle Ctrl+C and print progress."""
     print("\n\n" + "=" * 60)
-    print("⚠️  收到中断信号 (Ctrl+C)")
+    print("⚠️  Received interrupt signal (Ctrl+C)")
     print("=" * 60)
     if current_processing_file:
-        print("📄 当前正在处理的文件:")
-        print(f"  输入文件: {current_processing_file['input']}")
-        print(f"  输出文件: {current_processing_file['output']}")
-        print(f"  进度: {current_processing_file['index']}/{current_processing_file['total']}")
+        print("📄 Currently processing:")
+        print(f"  Input:  {current_processing_file['input']}")
+        print(f"  Output: {current_processing_file['output']}")
+        print(
+            f"  Progress: {current_processing_file['index']}/{current_processing_file['total']}"
+        )
     else:
-        print("  当前没有正在处理的文件")
+        print("  No file is being processed")
     print("=" * 60)
-    print("🛑 程序已中止")
+    print("🛑 Aborted")
     sys.exit(130)
 
 
@@ -64,63 +66,63 @@ def parse_args() -> argparse.Namespace:
         type=str,
         nargs="+",
         required=True,
-        help="输入数据路径 (JSONL 格式)，支持多个文件",
+        help="Input data path(s) in JSONL format (supports multiple files)",
     )
     parser.add_argument(
         "--output-dir",
         "-o",
         type=str,
         default=None,
-        help="输出目录(可选)。不指定则在输入目录下创建输出子目录",
+        help="Output directory (optional). Defaults to a subdir under each input file",
     )
     parser.add_argument(
         "--output-suffix",
         type=str,
         default="_text",
-        help="输出文件名后缀，例如 train.jsonl -> train_text.jsonl",
+        help="Output filename suffix, e.g. train.jsonl -> train_text.jsonl",
     )
     parser.add_argument(
         "--output-subdir",
         type=str,
         default="text",
-        help="输出子目录名称",
+        help="Output subdirectory name",
     )
     parser.add_argument(
         "--config",
         "-c",
         type=str,
         default=os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.yaml"),
-        help="配置文件路径",
+        help="Config file path",
     )
 
     parser.add_argument(
         "--ray-address",
         type=str,
         default=None,
-        help="Ray 集群地址。不指定则启动本地模式；'auto' 自动检测",
+        help="Ray cluster address. Empty starts local mode; 'auto' to detect",
     )
     parser.add_argument(
         "--num-cpus",
         type=int,
         default=None,
-        help="Ray 本地模式使用的 CPU 数量(仅本地模式生效)",
+        help="CPUs for local Ray mode (only when --ray-address is not set)",
     )
     parser.add_argument(
         "--num-gpus",
         type=int,
         default=None,
-        help="Ray 本地模式使用的 GPU 数量(仅本地模式生效)",
+        help="GPUs for local Ray mode (only when --ray-address is not set)",
     )
 
     parser.add_argument(
         "--no-resume",
         action="store_true",
-        help="禁用断点续传, 重新处理所有数据",
+        help="Disable resume and reprocess all data",
     )
     parser.add_argument(
         "--no-preserve-order",
         action="store_true",
-        help="禁用顺序保持, 可提高性能但输出顺序可能不一致",
+        help="Disable order preservation (faster but output order may differ)",
     )
 
     return parser.parse_args()
@@ -129,7 +131,7 @@ def parse_args() -> argparse.Namespace:
 def init_ray(args: argparse.Namespace) -> None:
     """Initialize Ray once."""
     if ray.is_initialized():
-        print("✅ Ray 已初始化, 使用现有连接")
+        print("✅ Ray already initialized; reusing existing connection")
         return
 
     init_kwargs = {
@@ -139,16 +141,34 @@ def init_ray(args: argparse.Namespace) -> None:
     }
 
     if args.ray_address:
-        print(f"🔗 连接到 Ray 集群: {args.ray_address}")
+        print(f"🔗 Connecting to Ray cluster: {args.ray_address}")
         init_kwargs["address"] = args.ray_address
     else:
         if args.num_cpus is not None:
             init_kwargs["num_cpus"] = args.num_cpus
         if args.num_gpus is not None:
             init_kwargs["num_gpus"] = args.num_gpus
-        print("🚀 启动 Ray 本地模式")
+        print("🚀 Starting Ray in local mode")
 
     ray.init(**init_kwargs)
+
+
+def find_latest_timestamp_dir(parent_dir: str) -> str | None:
+    """Find the latest timestamp directory (YYYYMMDD_HHMMSS) under a parent dir."""
+    if not os.path.exists(parent_dir):
+        return None
+
+    timestamp_dirs = []
+    for item in os.listdir(parent_dir):
+        item_path = os.path.join(parent_dir, item)
+        if os.path.isdir(item_path) and len(item) == 15 and item[8] == "_":
+            timestamp_dirs.append(item)
+
+    if not timestamp_dirs:
+        return None
+
+    latest = sorted(timestamp_dirs)[-1]
+    return os.path.join(parent_dir, latest)
 
 
 def generate_output_path(input_path: str, output_dir: str, suffix: str) -> str:
@@ -168,11 +188,11 @@ def main() -> None:
 
     for input_file in input_files:
         if not os.path.exists(input_file):
-            print(f"❌ 输入文件不存在: {input_file}")
+            print(f"❌ Input file not found: {input_file}")
             sys.exit(1)
 
     if not os.path.exists(args.config):
-        print(f"❌ 配置文件不存在: {args.config}")
+        print(f"❌ Config file not found: {args.config}")
         sys.exit(1)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -180,10 +200,18 @@ def main() -> None:
     output_files = []
     for input_file in input_files:
         if args.output_dir:
-            base_dir = os.path.join(args.output_dir, args.output_subdir, timestamp)
+            subdir_base = os.path.join(args.output_dir, args.output_subdir)
         else:
             input_dir = os.path.dirname(os.path.abspath(input_file))
-            base_dir = os.path.join(input_dir, args.output_subdir, timestamp)
+            subdir_base = os.path.join(input_dir, args.output_subdir)
+
+        # Resume mode: find latest timestamp dir; no-resume: create new one
+        if not args.no_resume:
+            latest_dir = find_latest_timestamp_dir(subdir_base)
+            base_dir = latest_dir if latest_dir else os.path.join(subdir_base, timestamp)
+        else:
+            base_dir = os.path.join(subdir_base, timestamp)
+
         output_files.append(generate_output_path(input_file, base_dir, args.output_suffix))
 
     for output_file in output_files:
@@ -234,7 +262,7 @@ def main() -> None:
         resume=not args.no_resume,
     )
 
-    print("🚀 开始执行 Pipeline...\n")
+    print("🚀 Running pipeline...\n")
 
     total_success = 0
     total_failed = 0

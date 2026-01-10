@@ -1,4 +1,4 @@
-"""数据读写工具."""
+"""Data I/O utilities."""
 
 import json
 from pathlib import Path
@@ -10,13 +10,13 @@ import pandas as pd
 
 def iter_jsonl(path: str) -> Iterator[dict]:
     """
-    流式读取 jsonl 文件.
+    Stream-read a JSONL file.
 
     Args:
-        path: 文件路径
+        path: file path
 
     Yields:
-        每行解析后的 dict
+        dict parsed from each line
     """
     with open(path) as f:
         for line in f:
@@ -26,12 +26,12 @@ def iter_jsonl(path: str) -> Iterator[dict]:
 
 def write_jsonl(path: str, items: list[dict], append: bool = False):
     """
-    写入 jsonl 文件.
+    Write a JSONL file.
 
     Args:
-        path: 文件路径
-        items: 要写入的数据列表
-        append: 是否追加模式
+        path: file path
+        items: list of items to write
+        append: whether to append
     """
     mode = "a" if append else "w"
     Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -42,16 +42,16 @@ def write_jsonl(path: str, items: list[dict], append: bool = False):
 
 def convert_to_python_types(obj: Any) -> Any:
     """
-    递归转换 numpy/pandas 类型为 Python 原生类型.
+    Recursively convert numpy/pandas types to native Python types.
 
-    用于解决 Ray Data 使用 pandas 格式时, 某些值会变成 numpy 类型,
-    导致 JSON 序列化失败的问题.
+    This avoids JSON serialization failures when Ray Data materializes pandas
+    objects that carry numpy scalar types.
 
     Args:
-        obj: 要转换的对象(可以是任意类型)
+        obj: object to convert (any type)
 
     Returns:
-        转换后的 Python 原生类型对象
+        converted native Python object
 
     Examples:
         >>> import numpy as np
@@ -80,14 +80,14 @@ def convert_to_python_types(obj: Any) -> Any:
 
 def get_nested_value(item: dict, field_path: str):
     """
-    获取嵌套字段的值.
+    Get a nested field value.
 
     Args:
-        item: 数据字典
-        field_path: 字段路径, 如 "metadata._uid" 或 "id"
+        item: data dict
+        field_path: dotted path, e.g. "metadata._uid" or "id"
 
     Returns:
-        字段值, 如果不存在则返回 None
+        field value, or None if missing
 
     Examples:
         >>> get_nested_value({"a": {"b": 1}}, "a.b")
@@ -107,16 +107,16 @@ def get_nested_value(item: dict, field_path: str):
 
 def convert_scalar_to_python(obj: Any) -> Any:
     """
-    转换单个标量值为 Python 原生类型.
+    Convert a scalar value to a native Python type.
 
-    用于比较操作(如集合成员检查)时, 确保类型一致.
-    比 convert_to_python_types 更轻量, 不递归处理容器类型.
+    Useful for comparisons (e.g., set membership). This is lighter than
+    convert_to_python_types and does not recurse into containers.
 
     Args:
-        obj: 要转换的标量值
+        obj: scalar value to convert
 
     Returns:
-        转换后的 Python 原生类型
+        converted native Python value
 
     Examples:
         >>> import numpy as np

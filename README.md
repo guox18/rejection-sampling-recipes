@@ -13,7 +13,7 @@ Reproducible recipes for rejection sampling in LLM/VLM data synthesis.
 ## Install
 
 ```bash
-# Option A: uv (recommended; the multimodal recipe uses this env)
+# Option A: uv (recommended; recipe example scripts use .venv by default)
 uv sync
 
 # Option B: conda + pip
@@ -79,8 +79,6 @@ bash recipes/text_sft_simple/entrypoint/run.sh
 
 ### 2) `vl_cot_sft_plus_parse` (text + image + answer parsing)
 
-
-For example:
 ```bash
 # 1) Add absolute image paths ("abs_path")
 python scripts/preprocess_images.py \
@@ -95,6 +93,8 @@ bash recipes/vl_cot_sft_plus_parse/entrypoint/run-30b/run-30b.sh
 ## Launch Serve
 
 See `scripts/launch_serve/README.md` for model service setup and launch steps.
+Note: the default launch scripts include `ray stop`. If you need to run multiple
+scripts, use separate machines or remove `ray stop`.
 
 ## Logging
 - Default log files live in `logs/`: `pipeline.log` for the driver and

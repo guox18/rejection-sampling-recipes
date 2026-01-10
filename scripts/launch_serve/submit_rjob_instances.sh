@@ -2,37 +2,37 @@
 set -euo pipefail
 
 # ============================================================================
-# 通过 rjob 提交多个模型服务实例
-# 每个实例在独立的 GPU 节点上运行
+# Submit multiple model service instances via rjob
+# Each instance runs on a separate GPU node
 # ============================================================================
 
-# ------------- 使用说明 -------------
+# ------------- Usage -------------
 usage() {
   cat <<EOF
-用法: $0 -n <实例数量> --config <配置文件> --model <模型名称> --router-ip <IP> --router-port <端口> [选项]
+Usage: $0 -n <NUM_INSTANCES> --config <CONFIG_FILE> --model <MODEL_NAME> --router-ip <IP> --router-port <PORT> [options]
 
-必需参数:
-  -n NUM                实例数量（提交 N 个 rjob 任务）
-  --config FILE         模型配置文件（YAML 格式）
-  --model NAME          要启动的模型名称
-  --router-ip IP        SGLang Router 的 IP 地址
-  --router-port PORT    SGLang Router 的端口
+Required:
+  -n NUM                Number of instances (submit N rjob tasks)
+  --config FILE         Model config file (YAML)
+  --model NAME          Model name to launch
+  --router-ip IP        SGLang Router IP
+  --router-port PORT    SGLang Router port
 
-可选参数:
-  --start-port PORT     起始端口号（默认: 8000）
-  --namespace NS        rjob namespace（默认: \$RJOB_NAMESPACE 或空）
-  --charged-group GRP   计费组（默认: \$RJOB_CHARGED_GROUP 或 puyullm_gpu）
-  --image IMG           Docker 镜像
-  --help                显示此帮助信息
+Optional:
+  --start-port PORT     Start port (default: 8000)
+  --namespace NS        rjob namespace (default: \$RJOB_NAMESPACE or empty)
+  --charged-group GRP   Charged group (default: \$RJOB_CHARGED_GROUP or puyullm_gpu)
+  --image IMG           Docker image
+  --help                Show this help
 
-示例:
+Example:
   $0 -n 4 --config model_config_example.yaml --model qwen3_vl_235b_a22b_thinking --router-ip 100.102.249.23 --router-port 21001
 
 EOF
   exit 1
 }
 
-# ------------- 参数解析 -------------
+# ------------- Argument parsing -------------
 NUM_INSTANCES=""
 CONFIG_FILE=""
 MODEL_NAME=""
@@ -85,40 +85,40 @@ while [[ $# -gt 0 ]]; do
       usage
       ;;
     *)
-      echo "错误: 未知参数 $1"
+      echo "Error: unknown argument $1"
       usage
       ;;
   esac
 done
 
-# ------------- 检查必需参数 -------------
+# ------------- Validate required args -------------
 if [ -z "$NUM_INSTANCES" ] || [ -z "$CONFIG_FILE" ] || [ -z "$MODEL_NAME" ] || [ -z "$ROUTER_IP" ] || [ -z "$ROUTER_PORT" ]; then
-  echo "错误: 缺少必需参数"
+  echo "Error: missing required arguments"
   usage
 fi
 
 if ! [[ "$NUM_INSTANCES" =~ ^[0-9]+$ ]] || [ "$NUM_INSTANCES" -lt 1 ]; then
-  echo "错误: 实例数量必须为正整数"
+  echo "Error: NUM_INSTANCES must be a positive integer"
   exit 1
 fi
 
-# 获取脚本目录
+# Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# 检查配置文件
+# Check config file
 if [ ! -f "${SCRIPT_DIR}/${CONFIG_FILE}" ]; then
-  echo "错误: 配置文件不存在: ${CONFIG_FILE}"
+  echo "Error: config file not found: ${CONFIG_FILE}"
   exit 1
 fi
 
-# 检查 rjob 命令
+# Check rjob command
 if ! command -v rjob &> /dev/null; then
-  echo "错误: rjob 命令不可用，请确保在正确的环境中运行"
+  echo "Error: rjob command not available; ensure correct environment"
   exit 1
 fi
 
-# ------------- 读取模型配置计算实际实例数 -------------
-echo "正在读取模型配置..."
+# ------------- Read model config to compute instances -------------
+echo "Reading model config..."
 read_model_config() {
   python3 <<EOF
 import yaml
@@ -129,7 +129,7 @@ try:
         config = yaml.safe_load(f)
     
     if "${MODEL_NAME}" not in config:
-        print("错误: 模型不存在于配置文件中", file=sys.stderr)
+        print("Error: model not found in config file", file=sys.stderr)
         sys.exit(1)
     
     model_config = config["${MODEL_NAME}"]
@@ -148,35 +148,35 @@ try:
     print(f"INSTANCES_PER_JOB={instances_per_job}")
     
 except Exception as e:
-    print(f"错误: 解析配置文件失败: {e}", file=sys.stderr)
+    print(f"Error: failed to parse config file: {e}", file=sys.stderr)
     sys.exit(1)
 EOF
 }
 
 eval $(read_model_config)
 
-# 计算期望的总实例数（用于健康检查）
+# Compute expected total instances (for health check)
 EXPECTED_TOTAL_INSTANCES=$((NUM_INSTANCES * INSTANCES_PER_JOB))
 
-# ------------- 显示配置信息 -------------
+# ------------- Show configuration -------------
 echo ""
 echo "=========================================="
-echo "提交 rjob 任务"
+echo "Submit rjob tasks"
 echo "=========================================="
-echo "模型:         ${MODEL_NAME}"
-echo "模型配置:     TP=${TP}, DP=${DP}, PP=${PP}"
-echo "每个任务GPU:  ${GPUS_PER_INSTANCE}"
-echo "rjob任务数:   ${NUM_INSTANCES}"
-echo "每任务实例:   ${INSTANCES_PER_JOB}"
-echo "总实例数:     ${EXPECTED_TOTAL_INSTANCES}"
-echo "起始端口:     ${START_PORT}"
+echo "Model:        ${MODEL_NAME}"
+echo "Model config: TP=${TP}, DP=${DP}, PP=${PP}"
+echo "GPUs/task:    ${GPUS_PER_INSTANCE}"
+echo "rjob tasks:   ${NUM_INSTANCES}"
+echo "Inst/task:    ${INSTANCES_PER_JOB}"
+echo "Total inst:   ${EXPECTED_TOTAL_INSTANCES}"
+echo "Start port:   ${START_PORT}"
 echo "Router:       ${ROUTER_IP}:${ROUTER_PORT}"
 echo "Namespace:    ${NAMESPACE}"
-echo "计费组:       ${CHARGED_GROUP}"
+echo "Charged grp:  ${CHARGED_GROUP}"
 echo "=========================================="
 echo ""
 
-# ------------- 提交 rjob 任务 -------------
+# ------------- Submit rjob tasks -------------
 SUBMITTED_JOBS=()
 SUBMITTED_PORTS=()
 
@@ -184,13 +184,13 @@ for ((i=0; i<NUM_INSTANCES; i++)); do
   # PORT=$((START_PORT + i))
   PORT=$START_PORT
   TIMESTAMP=$(date +%H%M%S)
-  # 裁剪模型名称，确保总长度不超过 64 字符
+  # Truncate model name to keep total length <= 64 chars
   MODEL_NAME_SHORT="${MODEL_NAME:0:50}"
   JOB_NAME="vllm-${MODEL_NAME_SHORT}-${TIMESTAMP}"
   
-  echo "[$((i+1))/${NUM_INSTANCES}] 提交任务: ${JOB_NAME} (端口 ${PORT})..."
+  echo "[$((i+1))/${NUM_INSTANCES}] Submitting task: ${JOB_NAME} (port ${PORT})..."
   
-  # 构建启动命令
+  # Build startup command
  STARTUP_CMD="cd /mnt/shared-storage-user/songdemin/user/guoxu/public/rejection-sampling-recipes/scripts/launch_serve && \
 bash start_vllm_service.sh \
   --config ${CONFIG_FILE} \
@@ -201,14 +201,14 @@ bash start_vllm_service.sh \
 
   echo $STARTUP_CMD
 
-  # 提交 rjob 任务
-  # 构建基础命令
+  # Submit rjob task
+  # Build base command
   RJOB_CMD="rjob submit \
     -e DISTRIBUTED_JOB=true \
     -e NCCL_DEBUG_SUBSYS=ALL \
     --image=\"${IMAGE}\""
   
-  # 只有当 NAMESPACE 非空时才添加 --namespace 参数
+  # Add --namespace only when NAMESPACE is non-empty
   if [ -n "$NAMESPACE" ]; then
     RJOB_CMD="$RJOB_CMD \
     --namespace \"${NAMESPACE}\""
@@ -236,64 +236,64 @@ bash start_vllm_service.sh \
   echo $RJOB_CMD
   
   if SUBMIT_OUTPUT=$(eval "$RJOB_CMD" 2>&1); then
-    echo "  ✓ 任务已提交: ${JOB_NAME}"
+    echo "  ✓ Task submitted: ${JOB_NAME}"
     SUBMITTED_JOBS+=("${JOB_NAME}")
     SUBMITTED_PORTS+=("${PORT}")
   else
     status=$?
-    echo "  ✗ 任务提交失败 (exit code ${status})"
+    echo "  ✗ Task submission failed (exit code ${status})"
     echo "${SUBMIT_OUTPUT}"
   fi
   
-  # 稍微等待，避免任务名冲突
+  # Brief wait to avoid name collisions
   sleep 2
 done
 
-# ------------- 显示提交结果 -------------
+# ------------- Submission summary -------------
 echo ""
 echo "=========================================="
 if [ ${#SUBMITTED_JOBS[@]} -eq 0 ]; then
-  echo "✗ 所有任务提交失败！"
+  echo "✗ All tasks failed to submit!"
   echo "=========================================="
   exit 1
 else
-  echo "✓ 已提交 ${#SUBMITTED_JOBS[@]}/${NUM_INSTANCES} 个任务"
+  echo "✓ Submitted ${#SUBMITTED_JOBS[@]}/${NUM_INSTANCES} tasks"
 fi
 echo "=========================================="
 echo ""
 
-echo "已提交的任务:"
+echo "Submitted tasks:"
 for ((i=0; i<${#SUBMITTED_JOBS[@]}; i++)); do
-  echo "  - ${SUBMITTED_JOBS[$i]} (端口 ${SUBMITTED_PORTS[$i]})"
+  echo "  - ${SUBMITTED_JOBS[$i]} (port ${SUBMITTED_PORTS[$i]})"
 done
 echo ""
 
-# ------------- 等待任务启动 -------------
-# 注意: rjob list 检测不太准确，跳过此阶段，直接监听 router 端口
+# ------------- Wait for startup -------------
+# Note: rjob list is unreliable; skip and poll router port directly
 echo "=========================================="
-echo "跳过任务状态检查（假设任务已启动）..."
+echo "Skipping task status check (assuming tasks started)..."
 echo "=========================================="
 echo ""
-echo "✓ 跳过 rjob list 检查，直接进入服务健康检查阶段"
+echo "✓ Skipped rjob list check; moving to service health checks"
 echo ""
 
-# ------------- 等待服务健康检查 -------------
+# ------------- Wait for service health -------------
 echo ""
 echo "=========================================="
-echo "等待服务健康检查和注册..."
+echo "Waiting for service health and registration..."
 echo "=========================================="
 echo ""
 
-echo "提示: 这可能需要 5-20 分钟（模型加载时间）"
-echo "将持续检查 SGLang Router 直到所有服务注册成功..."
-echo "Router 地址: http://${ROUTER_IP}:${ROUTER_PORT}/list_workers"
-echo "超时时间: 30 分钟"
+echo "Note: this may take 5-20 minutes (model load time)"
+echo "Will keep checking SGLang Router until all services register..."
+echo "Router URL: http://${ROUTER_IP}:${ROUTER_PORT}/list_workers"
+echo "Timeout: 30 minutes"
 echo ""
 
-HEALTH_TIMEOUT=1800  # 30分钟
+HEALTH_TIMEOUT=1800  # 30 minutes
 START_TIME=$(date +%s)
 
-# 注册验证函数 - 统计所有注册的 worker 数量
+# Registration checker - count registered workers
 check_registration() {
   local workers=$(curl -sf --connect-timeout 3 "http://${ROUTER_IP}:${ROUTER_PORT}/list_workers" 2>/dev/null || echo "")
   if [ -z "$workers" ]; then
@@ -301,7 +301,7 @@ check_registration() {
     return 0
   fi
   
-  # 计算注册的实例数量（统计包含 http 的行数）
+  # Count registered instances (lines containing http)
   local count=$(echo "$workers" | grep -o "http://" | wc -l)
   
   echo $count
@@ -319,75 +319,75 @@ while true; do
   
   if [ $ELAPSED -ge $HEALTH_TIMEOUT ]; then
     echo ""
-    echo "⚠ 健康检查超时（${HEALTH_TIMEOUT}秒）"
-    echo "部分服务可能仍在启动中"
+    echo "⚠ Health check timed out (${HEALTH_TIMEOUT}s)"
+    echo "Some services may still be starting"
     break
   fi
   
-  # 检查注册状态
+  # Check registration status
   REGISTERED_COUNT=$(check_registration)
   
   if [ "$REGISTERED_COUNT" -ge "$EXPECTED_TOTAL_INSTANCES" ]; then
     ALL_REGISTERED=true
     echo ""
-    echo "✓ 所有服务已成功注册到 Router！"
-    echo "  注册实例数: ${REGISTERED_COUNT}"
-    echo "  总共耗时: ${ELAPSED_MIN}分${ELAPSED_SEC}秒"
+    echo "✓ All services registered to Router!"
+    echo "  Registered instances: ${REGISTERED_COUNT}"
+    echo "  Elapsed: ${ELAPSED_MIN}m${ELAPSED_SEC}s"
     break
   fi
   
-  # 显示详细的检查信息
-  printf "[检查 #%d] 等待服务注册到 SGLang Router... (%d/%d 已注册, 已等待 %d分%d秒)\r" \
+  # Show detailed progress
+  printf "[Check #%d] Waiting for Router registration... (%d/%d registered, %dm%ds elapsed)\r" \
     "$CHECK_ITERATION" "$REGISTERED_COUNT" "$EXPECTED_TOTAL_INSTANCES" "$ELAPSED_MIN" "$ELAPSED_SEC"
   
   sleep 10
 done
 
-# ------------- 最终结果 -------------
+# ------------- Final result -------------
 echo ""
 echo "=========================================="
 if [ "$ALL_REGISTERED" = true ]; then
-  echo "✓✓✓ 所有服务已准备就绪！ ✓✓✓"
-  echo "已注册实例数: ${REGISTERED_COUNT}"
+  echo "✓✓✓ All services are ready! ✓✓✓"
+  echo "Registered instances: ${REGISTERED_COUNT}"
 else
-  echo "⚠ 部分服务可能未就绪"
-  echo "已注册: ${REGISTERED_COUNT}/${EXPECTED_TOTAL_INSTANCES}"
+  echo "⚠ Some services may not be ready"
+  echo "Registered: ${REGISTERED_COUNT}/${EXPECTED_TOTAL_INSTANCES}"
 fi
 echo "=========================================="
 echo ""
 
-echo "已提交的任务:"
+echo "Submitted tasks:"
 for JOB in "${SUBMITTED_JOBS[@]}"; do
   echo "  - ${JOB}"
 done
 echo ""
 
-echo "Router 地址: http://${ROUTER_IP}:${ROUTER_PORT}"
+echo "Router URL: http://${ROUTER_IP}:${ROUTER_PORT}"
 echo ""
 
-echo "管理命令:"
-echo "  查看任务状态: rjob list | grep vllm"
-echo "  查看任务日志: rjob logs <job-name>"
-echo "  停止所有任务:"
+echo "Management commands:"
+echo "  Task status: rjob list | grep vllm"
+echo "  Task logs:   rjob logs <job-name>"
+echo "  Stop all tasks:"
 for JOB in "${SUBMITTED_JOBS[@]}"; do
   echo "    rjob stop ${JOB}"
 done
 echo ""
 
-# 保存任务信息到文件
+# Save task info to file
 JOBS_FILE="/tmp/vllm_rjobs_${ROUTER_PORT}.txt"
-echo "# vLLM rjob 任务列表" > "${JOBS_FILE}"
-echo "# 创建时间: $(date)" >> "${JOBS_FILE}"
+echo "# vLLM rjob task list" > "${JOBS_FILE}"
+echo "# Created at: $(date)" >> "${JOBS_FILE}"
 echo "# Router: ${ROUTER_IP}:${ROUTER_PORT}" >> "${JOBS_FILE}"
 for JOB in "${SUBMITTED_JOBS[@]}"; do
   echo "${JOB}" >> "${JOBS_FILE}"
 done
 echo ""
-echo "任务信息已保存到: ${JOBS_FILE}"
+echo "Task info saved to: ${JOBS_FILE}"
 
 echo "=========================================="
 
-# 返回状态
+# Return status
 if [ "$ALL_REGISTERED" = true ]; then
   exit 0
 else

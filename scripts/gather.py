@@ -46,18 +46,18 @@ def write_parquet(data, datapath):
     df.to_parquet(datapath, index=False)
 
 
-### Here! 修改处理函数
+### Here! Modify the processing function
 def process_fn(example: Dict, qwen30ba3bfile_dict: Dict, qwen235ba22bfile_dict: Dict) -> Dict:
     """
-    处理单个样本的函数
+    Process a single sample.
 
     Args:
-        example: 原始数据样本
-        qwen30ba3bfile: 30b 文件
-        qwen235ba22bfile: 235b 文件
+        example: original sample
+        qwen30ba3bfile: 30b file
+        qwen235ba22bfile: 235b file
 
     Returns:
-        处理后的样本
+        processed sample
     """
     assert example["id"] == qwen30ba3bfile_dict["id"]
     assert example["id"] == qwen235ba22bfile_dict["id"]
@@ -75,16 +75,16 @@ def process_fn(example: Dict, qwen30ba3bfile_dict: Dict, qwen235ba22bfile_dict: 
                 break
         return example
 
-    # 初始化 workload 字段
+    # Initialize workload field.
     workload = {
         "original_assistant_content": get_assistant_content(example),
-        "source": "origin",  # 默认标记为原始数据
+        "source": "origin",  # Default to original data.
     }
 
     qwen235b_metadata = qwen235ba22bfile_dict.get("metadata") or {}
-    if (
-        qwen235b_metadata.get("used_ground_truth") is False
-    ):  # 对默认值要格外小心. 这里其实有四种分支, is True, is False, 以及, "值" is None and 不存在. 尽量写 is, 而不是 is not. is not 要考虑的情况太多了
+    if qwen235b_metadata.get("used_ground_truth") is False:
+        # Be careful with defaults: branches include True, False, and None/missing.
+        # Prefer `is` checks; `is not` can be ambiguous here.
         workload["source"] = "qwen3vl_235b_a22b_thinking"
         workload["n_passed"] = qwen235ba22bfile_dict["metadata"]["n_passed"]
         workload["n_total"] = qwen235ba22bfile_dict["metadata"]["n_total"]
@@ -97,42 +97,46 @@ def process_fn(example: Dict, qwen30ba3bfile_dict: Dict, qwen235ba22bfile_dict: 
         workload["n_total"] = qwen30ba3bfile_dict["metadata"]["n_total"]
         set_assistant_content(example, get_assistant_content(qwen30ba3bfile_dict))
 
-    # 两个模型都没有成功生成新数据，保持原始数据
+    # If neither model generated new data, keep original.
     example["workload"] = workload
 
     return example
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="数据处理脚本")
-    # Here! 填写输入输出
-    parser.add_argument("--input_path", type=str, default="", help="输入文件路径")
-    parser.add_argument("--qwen3vl30ba3bthinking_path", type=str, default="", help="输入文件路径")
-    parser.add_argument("--qwen3vl235ba22bthinking_path", type=str, default="", help="输入文件路径")
+    parser = argparse.ArgumentParser(description="Data processing script")
+    # Here! Fill in input/output.
+    parser.add_argument("--input_path", type=str, default="", help="Input file path")
     parser.add_argument(
-        "--output_path", type=str, default="", help="输出文件路径"
-    )  # 不填, 默认 _train.jsonl
+        "--qwen3vl30ba3bthinking_path", type=str, default="", help="Input file path"
+    )
+    parser.add_argument(
+        "--qwen3vl235ba22bthinking_path", type=str, default="", help="Input file path"
+    )
+    parser.add_argument(
+        "--output_path", type=str, default="", help="Output file path"
+    )  # If empty, defaults to _train.jsonl
 
     args = parser.parse_args()
 
-    # 读取数据
+    # Read data.
     data = read_jsonl(args.input_path)
     qwen30ba3bfile = read_jsonl(args.qwen3vl30ba3bthinking_path)
     qwen235ba22bfile = read_jsonl(args.qwen3vl235ba22bthinking_path)
     assert len(data) == len(qwen30ba3bfile)
     assert len(data) == len(qwen235ba22bfile)
-    # print(f'读取到 {len(data)} 条数据')
+    # print(f'Read {len(data)} items')
 
-    # 处理数据
+    # Process data.
     data = [
         process_fn(item, qwen30ba3bfile[idx], qwen235ba22bfile[idx])
         for idx, item in tqdm(enumerate(data))
     ]
 
-    # 统计成功有多少不是 origin 的
+    # Count how many are not origin.
     n_not_origin = sum(1 for item in data if item["workload"]["source"] != "origin")
     n_total = len(data)
-    print(f"替换率: {n_not_origin / n_total * 100}%")
-    # 保存数据
+    print(f"Replacement rate: {n_not_origin / n_total * 100}%")
+    # Save data.
     write_jsonl(data, args.output_path)
-    # print(f'处理完成，共 {len(data)} 条数据')
+    # print(f'Completed processing {len(data)} items')

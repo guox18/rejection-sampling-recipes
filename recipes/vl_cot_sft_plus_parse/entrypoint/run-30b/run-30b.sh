@@ -1,11 +1,11 @@
 #!/bin/bash
 #
-# SFT Recipe 执行脚本
+# SFT recipe runner
 #
-#   - 支持处理多个输入文件（复用同一个 Ray session）
-#   - 自动生成输出路径（保留输入文件名）
+#   - Supports multiple input files (reuses the same Ray session)
+#   - Auto-generates output paths (preserves input filenames)
 #
-# 使用方式:
+# Usage:
 #   bash run.sh
 #
 
@@ -23,41 +23,41 @@ export LOG_DIR="${LOG_DIR:-/tmp/logs/${RECIPE_NAME}}"
 mkdir -p "${LOG_DIR}"
 
 # ============================================================
-# 配置项 - 仅传递 run.py 原生参数；模型/并发等请直接改 yaml
+# Config - only pass run.py CLI args; edit YAML for model/concurrency
 # ============================================================
-# 配置文件路径（可指向自定义 config）
+# Config file path (can point to a custom config)
 CONFIG_FILE="${SCRIPT_DIR}/config.yaml"
 
-# 输入文件路径（支持多个文件，用空格分隔）
+# Input files (supports multiple files, space-separated)
 INPUT_FILES=(
     # test
     "$PROJECT_ROOT/tests/mock/text-pic.jsonl"
 )
 
-# 输出目录（自动在输入目录下创建 sft/YYYYMMDD_HHMMSS 格式的目录，也可以通过如下方式手动指定）
+# Output directory (auto-creates sft/YYYYMMDD_HHMMSS under input dir, or set manually)
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 OUTPUT_DIR="${PROJECT_ROOT}/outputs/${TIMESTAMP}"
 
-LATEST=""                  # 设置为 "--latest" 从最新时间戳目录续传
-# 输出文件后缀
+LATEST=""                  # Set to "--latest" to resume from latest timestamp dir
+# Output filename suffix
 OUTPUT_SUFFIX="_sft"
-SFT_SUBDIR="sft"              # SFT 输出子目录名称，默认为 "sft"
+SFT_SUBDIR="sft"              # SFT output subdir name (default: "sft")
 
-# 其他选项（均为 run.py 原生参数，不修改 yaml 配置）
-NO_RESUME=""               # 设置为 "--no-resume" 禁用断点续传
-NO_PRESERVE_ORDER=""       # 设置为 "--no-preserve-order" 禁用顺序保持
+# Other options (run.py args only; do not change YAML)
+NO_RESUME=""               # Set to "--no-resume" to disable resume
+NO_PRESERVE_ORDER=""       # Set to "--no-preserve-order" to disable order preservation
 
-# 错误检测选项
-ERROR_DETECTION="--error-detection"  # 设置为 "--error-detection" 启用错误检测，留空则禁用
-ERROR_THRESHOLD=""         # InternalServerError 错误率阈值，留空使用默认值 0.5 (50%)
+# Error detection options
+ERROR_DETECTION="--error-detection"  # Set to enable error detection (empty to disable)
+ERROR_THRESHOLD=""         # InternalServerError rate threshold (default 0.5)
 
-# =========================== 以上为配置项 ============================
+# =========================== End of config ============================
 
-# 激活虚拟环境
+# Activate virtual environment
 source "$PROJECT_ROOT/.venv/bin/activate"
 export PYTHONPATH="/usr/local/lib/python3.12/dist-packages:$PYTHONPATH"
 
-# 禁用 Ray 的各种警告和日志
+# Silence Ray warnings/logs
 export RAY_RUNTIME_ENV_HOOK_ENABLED=0
 export RAY_DEDUP_LOGS=1
 export RAY_DISABLE_DOCKER_CPU_WARNING=1
@@ -68,85 +68,85 @@ export RAY_IGNORE_UNHANDLED_ERRORS=1
 export RAY_worker_register_timeout_seconds=30
 
 
-# 配置
+# Config
 NODE_RANK=${NODE_RANK:-0}
 MASTER_PORT=${MASTER_PORT:-6379}
 
-# 获取 head 节点地址
+# Get head node address
 get_master_address() {
     local ip_address=$(getent hosts ${MASTER_ADDR} | awk '{print $1}')
     echo "${ip_address}:${MASTER_PORT}"
 }
 
-# 启动 Ray head 节点
+# Start Ray head node
 start_ray_head() {
-    echo "[INFO] 停止已有的 Ray 进程..."
+    echo "[INFO] Stopping existing Ray processes..."
     ray stop --force 2>/dev/null || true
     
-    echo "[INFO] 启动 Ray head 节点..."
+    echo "[INFO] Starting Ray head node..."
     ray start --head \
         --port ${MASTER_PORT} \
         --system-config='{"enable_metrics_collection":false,"metrics_report_interval_ms":0}' \
         --disable-usage-stats
     
     if [ $? -ne 0 ]; then
-        echo "[ERROR] 启动 Ray head 节点失败"
+        echo "[ERROR] Failed to start Ray head node"
         exit 1
     fi
 }
 
-# 连接到 Ray 集群
+# Connect to Ray cluster
 connect_to_ray() {
     local master_address=$1
     
-    echo "[INFO] 停止已有的 Ray 进程..."
+    echo "[INFO] Stopping existing Ray processes..."
     ray stop --force 2>/dev/null || true
     
-    echo "[INFO] 连接到 Ray 集群: ${master_address}..."
+    echo "[INFO] Connecting to Ray cluster: ${master_address}..."
     ray start --address ${master_address} \
         --disable-usage-stats
     
     if [ $? -ne 0 ]; then
-        echo "[ERROR] 连接 Ray 集群失败"
+        echo "[ERROR] Failed to connect to Ray cluster"
         exit 1
     fi
 }
 
-# 执行 Pipeline
+# Run pipeline
 run_pipeline() {
-    echo "[INFO] 执行 SFT Pipeline..."
+    echo "[INFO] Running SFT pipeline..."
     cd "$PROJECT_ROOT"
     
-    # 构建命令行参数
+    # Build CLI args
     local args=(--ray-address auto)
     
-    # 添加输入文件（支持多个）
+    # Add input files (supports multiple)
     if [ ${#INPUT_FILES[@]} -gt 0 ]; then
         args+=(--input "${INPUT_FILES[@]}")
     fi
     
 
-    # 添加输出目录
+    # Add output directory
     [ -n "$OUTPUT_DIR" ] && args+=(--output-dir "$OUTPUT_DIR")
     [ -n "$OUTPUT_SUFFIX" ] && args+=(--output-suffix "$OUTPUT_SUFFIX")
     [ -n "$SFT_SUBDIR" ] && args+=(--sft-subdir "$SFT_SUBDIR")
     
-    # 添加配置文件
+    # Add config file
     [ -n "$CONFIG_FILE" ] && args+=(--config "$CONFIG_FILE")
     
-    # 添加其他选项
+    # Add other options
     [ -n "$LATEST" ] && args+=("$LATEST")
     [ -n "$NO_RESUME" ] && args+=("$NO_RESUME")
     [ -n "$NO_PRESERVE_ORDER" ] && args+=("$NO_PRESERVE_ORDER")
     
-    # 添加错误检测选项
+    # Add error detection options
     [ -n "$ERROR_DETECTION" ] && args+=("$ERROR_DETECTION")
     [ -n "$ERROR_THRESHOLD" ] && args+=(--error-threshold "$ERROR_THRESHOLD")
     
     python -m recipes.vl_cot_sft_plus_parse.entrypoint.run "${args[@]}"
 }
 
-# 主函数
+# Main
 main() {
     echo "============================================================"
     echo "SFT Recipe"
@@ -158,25 +158,25 @@ main() {
     echo "============================================================"
     
     if [ ${NODE_RANK} -eq 0 ]; then
-        # Head 节点：启动 Ray 并执行 Pipeline
+        # Head node: start Ray and run pipeline
         start_ray_head
         
         if [ -n "${MASTER_ADDR}" ]; then
             local master_address=$(get_master_address)
-            echo "[INFO] Worker 加入命令: ray start --address ${master_address}"
+            echo "[INFO] Worker join command: ray start --address ${master_address}"
         fi
 
-        echo "[INFO] 输入文件数量: ${#INPUT_FILES[@]}"
-        echo "[INFO] 输出目录: ${OUTPUT_DIR}"
+        echo "[INFO] Input files: ${#INPUT_FILES[@]}"
+        echo "[INFO] Output dir: ${OUTPUT_DIR}"
 
-        # 运行 Pipeline（输出路径会自动生成）
+        # Run pipeline (output paths auto-generated)
         run_pipeline
     else
-        # Worker 节点：连接到 Ray 集群并等待
+        # Worker node: connect to Ray and wait
         local master_address=$(get_master_address)
         connect_to_ray ${master_address}
         
-        echo "[INFO] Worker 节点已连接, 进入等待状态..."
+        echo "[INFO] Worker connected, waiting..."
         while true; do
             sleep 60
         done
