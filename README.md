@@ -1,33 +1,29 @@
 # Rejection Sampling Recipes
 
-Reproducible recipes for rejection sampling in LLM data synthesis.
+Reproducible recipes for rejection sampling in LLM/VLM data synthesis.
+
+## Why this repo
+
+- **Easy to run**: pick a recipe and run it; no extra scaffolding.
+- **Ready-to-use recipes**: text + multimodal flows with answer parsing, a solid judge
+  prompt, and safe image-resize fallbacks.
+- **Scales when data grows**: Ray Data based pipeline, which gives streaming-style processing,
+  batching, concurrency, and checkpoint/resume out of the box.
 
 ## Install
-
-Python >= 3.10. Choose one (keep it simple):
 
 ```bash
 # Option A: uv (recommended; the multimodal recipe uses this env)
 uv sync
 
-# run scripts inside the uv env
-uv run python -m recipes.text_sft_simple.entrypoint.run --help
-
-# Option B: conda + pip (traditional)
+# Option B: conda + pip
 conda create -n rsr python=3.12
 conda activate rsr
 pip install -r requirements.txt
 ```
-
-Note: run commands from the repo root so `src/` and `recipes/` are importable.
-
 ## Core Concepts
 
 - **Stage**: A single processing step (e.g., sampling, verification, formatting).
-  Implement `process_item(item: dict) -> dict` for automatic batching, or override
-  `process(batch: list[dict]) -> list[dict]` for custom batch processing. Stages may
-  filter/expand/reorder items; the pipeline restores framework fields based on
-  `_resume_id`.
 - **Recipe**: A sequence of stages that defines a complete data processing workflow.
 - **Pipeline**: The execution engine that runs recipes with batching, error handling,
   and checkpoint/resume.
