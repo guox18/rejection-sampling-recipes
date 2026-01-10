@@ -7,12 +7,13 @@ set -e
 
 export RAY_DEFAULT_OBJECT_STORE_MEMORY_PROPORTION=0.75
 
-source "$PROJECT_ROOT/.venv/bin/activate"
-export PYTHONPATH="/usr/local/lib/python3.12/dist-packages:$PYTHONPATH"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../" && pwd)"
 RECIPE_NAME="text_sft_simple"
+
+source "$PROJECT_ROOT/.venv/bin/activate"
+export PYTHONPATH="/usr/local/lib/python3.12/dist-packages:$PYTHONPATH"
 
 ray stop
 
