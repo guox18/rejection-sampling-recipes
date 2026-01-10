@@ -1016,25 +1016,4 @@ if __name__ == "__main__":
     
     data_converter = DataConverterStage(config)
    
-    test_file = "/mnt/shared-storage-user/songdemin/user/guoxu/public/rejection-sampling-recipes/tests/_testsvl_cot_sft_plus_parse.jsonl"
-    batch = []
-    with open(test_file, 'r', encoding='utf-8') as f:
-        for line in f:
-            if line.strip():
-                batch.append(json.loads(line))
-
-    results = data_converter.process(batch)
-    for result in results:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-        print("-" * 80)
-    
-    import sys
-    res = sys.modules['recipes.vl_cot_sft_plus_parse.recipe'] is sys.modules['__main__']
-    print(res)
-    from recipes.vl_cot_sft_plus_parse.recipe import DataConverterStage
-    res = isinstance(data_converter, DataConverterStage)
-    print(res)
-    print(type(data_converter).__name__)
-    print(DataConverterStage.__name__)
-    print('-------------------')
-    print(sys.modules)
+   # do quick unit test here

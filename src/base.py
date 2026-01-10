@@ -14,8 +14,8 @@ class Stage(ABC):
     Stage 基类: 流水线中的一个处理阶段.
 
     用法:
-    1. 实现 process_item(item) -> dict  (推荐)
-    2. 覆盖 process(batch) -> list[dict]  (高级用法, 完全自定义批处理)
+    1. 实现 process_item(item) -> dict  
+    2. 覆盖 process(batch) -> list[dict]  (自定义批处理)
 
     允许:
     - 过滤/扩增/重排 batch 中的 item。
@@ -36,7 +36,6 @@ class Stage(ABC):
         多线程模式: 框架用线程池并发执行 batch 内的 item.
 
         线程池大小通过在 initialize() 中设置 self._thread_pool_size 指定.
-        如果不设置, 默认使用 10 个线程.
         """
         stage_class._execution_mode = "threaded"
         return stage_class
@@ -65,7 +64,7 @@ class Stage(ABC):
         """同步模式: 顺序处理每个 item."""
         results = []
         for item in batch:
-            # 只有当 _failed 明确为 True 时才跳过（避免 NaN 或 None 导致误判）
+            # 只有当 _failed 明确为 True 时才跳过
             if item.get("_failed") is True:
                 results.append(item)
                 continue
@@ -94,7 +93,7 @@ class Stage(ABC):
         """多线程模式: 用线程池并发处理 batch 内的 item."""
 
         def safe_process_one(item):
-            # 只有当 _failed 明确为 True 时才跳过（避免 NaN 或 None 导致误判）
+            # 只有当 _failed 明确为 True 时才跳过
             if item.get("_failed") is True:
                 return item
             try:
@@ -113,7 +112,7 @@ class Stage(ABC):
                     "_traceback": error_trace,
                 }
 
-        # 从实例属性读取线程池大小, 如果未设置则使用默认值 10
+        # 从实例属性读取线程池大小
         max_workers = getattr(self, "_thread_pool_size", 10)
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
