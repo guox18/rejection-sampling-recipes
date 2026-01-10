@@ -43,9 +43,7 @@ def signal_handler(signum, frame):
         print("📄 当前正在处理的文件:")
         print(f"  输入文件: {current_processing_file['input']}")
         print(f"  输出文件: {current_processing_file['output']}")
-        print(
-            f"  进度: {current_processing_file['index']}/{current_processing_file['total']}"
-        )
+        print(f"  进度: {current_processing_file['index']}/{current_processing_file['total']}")
     else:
         print("  当前没有正在处理的文件")
     print("=" * 60)

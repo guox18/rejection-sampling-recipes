@@ -15,6 +15,7 @@ FRAMEWORK_FIELDS: Set[str] = {"_resume_id", "_failed", "_error", "_traceback"}
 
 logger = logging.getLogger(__name__)
 
+
 def remove_framework_fields(item: Dict[str, Any], fields: Set[str] = None) -> Dict[str, Any]:
     """
     Remove framework internal fields from a single item.
@@ -77,9 +78,10 @@ def clean_framework_fields_from_file(
     cleaned_lines = 0
     error_lines = 0
 
-    with input_file.open("r", encoding="utf-8") as fin, output_file.open(
-        "w", encoding="utf-8"
-    ) as fout:
+    with (
+        input_file.open("r", encoding="utf-8") as fin,
+        output_file.open("w", encoding="utf-8") as fout,
+    ):
         for line_num, line in enumerate(fin, 1):
             line = line.strip()
             if not line:
@@ -129,7 +131,8 @@ if __name__ == "__main__":
   # 清理特定字段
   python -m src.utils.framework -i input.jsonl -o output.jsonl -f _resume_id _error
 
-默认清理的字段: """ + ", ".join(sorted(FRAMEWORK_FIELDS)),
+默认清理的字段: """
+        + ", ".join(sorted(FRAMEWORK_FIELDS)),
     )
 
     parser.add_argument("-i", "--input", required=True, help="输入 JSONL 文件路径")

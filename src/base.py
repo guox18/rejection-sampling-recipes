@@ -14,7 +14,7 @@ class Stage(ABC):
     Stage 基类: 流水线中的一个处理阶段.
 
     用法:
-    1. 实现 process_item(item) -> dict  
+    1. 实现 process_item(item) -> dict
     2. 覆盖 process(batch) -> list[dict]  (自定义批处理)
 
     允许:

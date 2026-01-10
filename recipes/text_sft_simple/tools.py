@@ -233,6 +233,7 @@ class SyncOpenAIClient:
         )
         return [choice.message.content or "" for choice in response.choices]
 
+
 class AsyncOpenAIClient:
     """OpenAI-compatible async client using aiohttp."""
 

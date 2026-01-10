@@ -25,19 +25,19 @@ def clean_nan_values(item: dict, warn: bool = True) -> dict:
     """
     清理字典中的 NaN 值，将其转换为 None. 数据是列式操作的, 所有 item 需要具有相同的字段.
     如果有些项独有某些字段, pandas 会为缺失的字段带上 NaN 值.
-    
+
     Args:
         item: 要清理的数据字典
         warn: 是否在发现 NaN 时打印警告
-    
+
     Returns:
         清理后的字典（NaN 转换为 None）
     """
     import math
-    
+
     has_nan = False
     cleaned_item = {}
-    
+
     for k, v in item.items():
         # 检查是否为 NaN（包括 pandas 的 NaN 和 numpy 的 nan）
         if isinstance(v, float) and math.isnan(v):
@@ -52,18 +52,18 @@ def clean_nan_values(item: dict, warn: bool = True) -> dict:
             cleaned_item[k] = None
         else:
             cleaned_item[k] = v
-    
+
     return cleaned_item
 
 
 def safe_str(value, max_length: int = 500) -> str:
     """
     安全地将值转换为字符串，避免打印过大的数据导致程序崩溃.
-    
+
     Args:
         value: 要转换的值
         max_length: 字符串的最大长度
-    
+
     Returns:
         安全的字符串表示
     """
@@ -79,11 +79,11 @@ def safe_str(value, max_length: int = 500) -> str:
 def safe_repr_item(item: dict, max_value_length: int = 200) -> str:
     """
     安全地生成 item 的字符串表示，避免打印过大的数据导致程序崩溃.
-    
+
     Args:
         item: 要表示的数据字典
         max_value_length: 每个字段值的最大长度
-    
+
     Returns:
         安全的字符串表示
     """
@@ -335,7 +335,7 @@ class Pipeline:
         # 确保 Ray 已初始化
         if not ray.is_initialized():
             ray.init()
-        
+
         # 设置输出路径
         if output_path is None:
             self.work_dir.mkdir(parents=True, exist_ok=True)
@@ -357,7 +357,9 @@ class Pipeline:
         if self.resume:
             processed_ids = self._load_processed_ids(output_path)
             if processed_ids:
-                logger.info("[Resume] Found %s processed items, will skip them.", len(processed_ids))
+                logger.info(
+                    "[Resume] Found %s processed items, will skip them.", len(processed_ids)
+                )
 
         # 读取数据（JSONL 格式：每行一个 JSON 对象）
         ds = ray.data.read_json(input_path, lines=True)
@@ -417,7 +419,9 @@ class Pipeline:
                     # 统计失败的 item，但仍然保留在输出中
                     if item.get("_failed") is True:
                         failed_rows += 1
-                        error_msg = safe_str(item.get("_error") or "Unknown error", max_length=10000)
+                        error_msg = safe_str(
+                            item.get("_error") or "Unknown error", max_length=10000
+                        )
                         item_id = safe_str(item.get("id", "unknown"), max_length=100)
                         resume_id = safe_str(item.get("_resume_id", "unknown"), max_length=100)
                         traceback_msg = safe_str(
@@ -484,6 +488,7 @@ class Pipeline:
         - 失败 item 的跳过逻辑
         - 异常捕获和 _failed 标记
         """
+
         class StageCallable:
             """封装 Stage 为 Ray Data 可调用对象."""
 
@@ -516,8 +521,7 @@ class Pipeline:
 
                 # 保存每个 item 的框架字段
                 framework_data = {
-                    idx: {k: item.get(k) for k in FRAMEWORK_FIELDS}
-                    for idx, item in enumerate(rows)
+                    idx: {k: item.get(k) for k in FRAMEWORK_FIELDS} for idx, item in enumerate(rows)
                 }
 
                 try:
@@ -564,8 +568,7 @@ class Pipeline:
                     if not all(keys == all_keys[0] for keys in all_keys):
                         all_fields = set().union(*all_keys)
                         results = [
-                            {field: item.get(field) for field in all_fields}
-                            for item in results
+                            {field: item.get(field) for field in all_fields} for item in results
                         ]
 
                 return pd.DataFrame(results)

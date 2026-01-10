@@ -65,7 +65,6 @@ def infer_image_base_path_from_doc_loc(doc_loc: str, image_base_dir: str) -> Opt
     dataset_name = match.group(1)
     image_path = os.path.join(image_base_dir, dataset_name, "multimodal_elements")
 
-
     return image_path
 
 
