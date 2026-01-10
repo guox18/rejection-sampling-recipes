@@ -53,7 +53,7 @@ ERROR_THRESHOLD=""         # InternalServerError 错误率阈值，留空使用�
 
 # =========================== 以上为配置项 ============================
 
-# 激活虚拟环境(确保 Ray worker 使用正确的 Python)
+# 激活虚拟环境
 source "$PROJECT_ROOT/.venv/bin/activate"
 export PYTHONPATH="/usr/local/lib/python3.12/dist-packages:$PYTHONPATH"
 
