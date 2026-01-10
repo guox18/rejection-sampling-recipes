@@ -42,7 +42,13 @@ from src.utils import get_nested_value
 from src.utils.qwen3_vl_util import smart_resize, SPATIAL_MERGE_SIZE, IMAGE_MAX_TOKEN_NUM
 
 from .config import SFTConfig
-from .tools import AsyncOpenAIClient, SyncOpenAIClient, DEFAULT_JUDGE_TEMPLATE, clip_thinking, EXTRACT_ANSWER_TEMPLATE
+from .tools import (
+    AsyncOpenAIClient,
+    SyncOpenAIClient,
+    DEFAULT_JUDGE_TEMPLATE,
+    clip_thinking,
+    EXTRACT_ANSWER_TEMPLATE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -245,6 +251,34 @@ def _restore_image_urls(messages: list, original_urls: list) -> list:
         restored_messages.append(restored_msg)
     
     return restored_messages
+
+
+def restore_original_images_in_place(item: dict) -> dict:
+    """Restore base64 images back to original paths when metadata carries them."""
+    original_urls = (item.get("metadata") or {}).get("original_image_urls")
+    if original_urls:
+        item["messages"] = _restore_image_urls(item.get("messages", []), original_urls)
+    return item
+
+
+def should_skip_for_final_output(item: dict) -> bool:
+    """Skip rest of pipeline when first-round already produced valid output."""
+    return (item.get("metadata") or {}).get("used_ground_truth") is False
+
+
+def extract_question_text(messages: list[dict]) -> str:
+    """Extract user text from messages (supports multimodal lists)."""
+    for msg in reversed(messages or []):
+        if msg.get("role") != "user":
+            continue
+        content = msg.get("content", "")
+        if isinstance(content, list):
+            for content_item in content:
+                if isinstance(content_item, dict) and content_item.get("type") == "text":
+                    return content_item.get("text", "")
+        else:
+            return content
+    return ""
 
 class DataConverterStage(Stage):
     """
@@ -462,34 +496,9 @@ class DataConverterStage(Stage):
         return new_content, image_paths, relative_paths
     
     def process(self, batch: list[dict]) -> list[dict]:
-        """覆盖标准的 process 方法, 因为最后一个阶段需要进行失败处理"""
-        results = []
-        for item in batch:
-            # (1) bugfix: 之前的 formatter 忘记恢复 img_url
-            # 导致, 第二轮 roll 数据时, 无法找到第一轮出错项的 img_url
-            original_urls = (item.get("metadata") or {}).get("original_image_urls")
-            if original_urls:
-                item["messages"] = _restore_image_urls(item["messages"], original_urls)
-            
-            try:
-                result = self.process_item(item)
-                results.append(result)
-            except Exception as e:
-                import traceback
-
-                error_trace = traceback.format_exc()
-                logger.error(
-                    f"[{type(self).__name__}] ❌ Item {item.get('id', 'unknown')} failed: {e}\n{error_trace}"
-                )
-                results.append(
-                    {
-                        **item,
-                        "_failed": True,
-                        "_error": f"{type(self).__name__}: {e}",
-                        "_traceback": error_trace,
-                    }
-                )
-        return results
+        """先恢复图片 URL，再沿用基类的异常处理."""
+        restored_batch = [restore_original_images_in_place(item) for item in batch]
+        return self._default_sync_process(restored_batch)
     
     def process_item(self, item: dict) -> dict:
         """
@@ -504,8 +513,7 @@ class DataConverterStage(Stage):
         Raises:
             ValueError: 如果包含图像但绝对路径字段不存在
         """
-        # 如果未使用 ground_truth, 则说明已经产生有效的输出.
-        if item.get("metadata") is not None and item.get("metadata", {}).get("used_ground_truth") is False:
+        if should_skip_for_final_output(item):
             return item
         # 1. 获取图片绝对路径（从配置的字段读取）
         image_base_path = get_nested_value(item, self.abs_image_path_field)
@@ -601,32 +609,14 @@ class ParseStage(Stage):
         - 失败的 item 会被框架自动跳过, 不会进入 process_item 方法
         - 无需手动 try-catch
         """
-        # 如果未使用 ground_truth, 则说明已经产生有效的输出.
-        if (item.get("metadata") or {}).get("used_ground_truth") is False:
+        if should_skip_for_final_output(item):
             return item
         
         # 如果已经有 short answer, 跳过
         if (item.get("metadata") or {}).get("short_answer") is not None:
             return item
         
-        messages = item.get("messages", [])
-
-        # 提取问题 (支持多模态数据)
-        question = ""
-        if messages:
-            for msg in reversed(messages):
-                if msg.get("role") == "user":
-                    content = msg.get("content", "")
-                    # 如果 content 是 list (多模态), 提取 text 部分
-                    if isinstance(content, list):
-                        for content_item in content:
-                            if isinstance(content_item, dict) and content_item.get("type") == "text":
-                                question = content_item.get("text", "")
-                                break
-                    else:
-                        # 如果 content 是 string (纯文本)
-                        question = content
-                    break
+        question = extract_question_text(item.get("messages", []))
         
         answer = item.get("metadata", {}).get("answer")
         
@@ -637,7 +627,7 @@ class ParseStage(Stage):
         short_answer = self._call_parse(prompt)
         item["metadata"]["short_answer"] = short_answer
 
-        # logger.info(f"[ParseStage] Item {item.get('id', 'unknown')}: Short answer: {short_answer}")
+        logger.info(f"[ParseStage] Item {item.get('id', 'unknown')}: Short answer: {short_answer}")
         
         return item
 
@@ -651,7 +641,7 @@ class ParseStage(Stage):
         )
 
 
-# 自行实现
+# 实现异步采样
 class SamplerStage(Stage):
     """
     采样阶段: 为每个 item 生成 n 个 responses.
@@ -685,8 +675,7 @@ class SamplerStage(Stage):
                 if item.get("_failed") is True:
                     return item
                 
-                # 如果已经产生有效输出 (ground truth 为 False)，直接返回
-                if item.get("metadata", {}).get("used_ground_truth") is False:
+                if should_skip_for_final_output(item):
                     return item
                 
                 messages = item.get("messages", [])
@@ -723,7 +712,7 @@ class SamplerStage(Stage):
                             # Resize 图片
                             resized_messages = resize_messages_images(messages, max_pixels=aggressive_max_pixels)
                             
-                            # 重试一次（tools.py 仍会处理其他错误的重试）
+                            # 重试一次
                             responses = await self.client.chat_completion(
                                 session=session,
                                 semaphore=semaphore,
@@ -797,8 +786,7 @@ class VerifierStage(Stage):
         - 失败的 item 会被框架自动跳过, 不会进入 process_item 方法
         - 无需手动 try-catch
         """
-        # 如果未使用 ground_truth, 则说明已经产生有效的输出.
-        if item.get("metadata", {}).get("used_ground_truth") is False:
+        if should_skip_for_final_output(item):
             return item
         
         responses = item.get("responses", [])
@@ -808,22 +796,7 @@ class VerifierStage(Stage):
         
         logger.info(f"[VerifierStage] Item {item_id}: Verifying {len(responses)} responses")
         
-        # 提取问题 (支持多模态数据)
-        question = ""
-        if messages:
-            for msg in reversed(messages):
-                if msg.get("role") == "user":
-                    content = msg.get("content", "")
-                    # 如果 content 是 list (多模态), 提取 text 部分
-                    if isinstance(content, list):
-                        for content_item in content:
-                            if isinstance(content_item, dict) and content_item.get("type") == "text":
-                                question = content_item.get("text", "")
-                                break
-                    else:
-                        # 如果 content 是 string (纯文本)
-                        question = content
-                    break
+        question = extract_question_text(messages)
         
         # 验证所有 responses, 并返回第一条 judge 提示词和输出用于调试
         rollouts, first_judge_prompt, first_judge_output = self._verify_llm_judge(responses, metadata, question)
@@ -861,8 +834,6 @@ class VerifierStage(Stage):
             return [], None, None
         
         if "short_answer" not in metadata:
-            # logger.warning(f"[VerifierStage] ⚠️  Question: {question}, short_answer not in metadata, using answer as gold_target")
-            # gold_target = metadata.get("answer", "")
             raise ValueError(f"[VerifierStage] ⚠️  Question: {question}, short_answer not in metadata")
         else:
             gold_target = metadata["short_answer"]
@@ -878,25 +849,22 @@ class VerifierStage(Stage):
                 predicted_answer=clipped_response,
             )
             
+            judge_output = None
             try:
                 judge_output = self._call_judge(prompt)
                 is_correct = self._parse_judge_output(judge_output)
                 score = 1.0 if is_correct else 0.0
-                
-                # 保存第一条提示词和输出用于调试
-                if idx == 0:
-                    first_judge_prompt = prompt
-                    first_judge_output = judge_output
             except Exception as e:
                 import traceback
                 error_trace = traceback.format_exc()
                 logger.warning(f"[VerifierStage] ⚠️  Judge error on response {idx}: {e}\n{error_trace}")
                 score = 0.0
-                
-                # 第一条失败时也要记录
+                judge_output = f"ERROR: {e}\n\nTraceback:\n{error_trace}"
+            finally:
+                # 保存第一条提示词和输出用于调试
                 if idx == 0:
                     first_judge_prompt = prompt
-                    first_judge_output = f"ERROR: {e}\n\nTraceback:\n{error_trace}"
+                    first_judge_output = judge_output
             
             rollouts.append({"response": response, "score": score})
         
@@ -943,45 +911,15 @@ class FormatterStage(Stage):
         self.config = config
 
     def process(self, batch: list[dict]) -> list[dict]:
-        """覆盖标准的 process 方法, 因为最后一个阶段需要进行失败处理"""
-        results = []
-        for item in batch:
-            # 无论成功失败, 都需要恢复 image url 字段, 因为可能还会再 roll 一轮数据
-            # 恢复原始图像 URL（从 base64 恢复为相对路径）
-            original_urls = (item.get("metadata") or {}).get("original_image_urls")
-            if original_urls:
-                item["messages"] = _restore_image_urls(item["messages"], original_urls)
-            
-            
-            if item.get("_failed") is True:
-                results.append(item)
-                continue
-
-            try:
-                result = self.process_item(item)
-                results.append(result)
-            except Exception as e:
-                import traceback
-
-                error_trace = traceback.format_exc()
-                logger.error(
-                    f"[{type(self).__name__}] ❌ Item {item.get('id', 'unknown')} failed: {e}\n{error_trace}"
-                )
-                results.append(
-                    {
-                        **item,
-                        "_failed": True,
-                        "_error": f"{type(self).__name__}: {e}",
-                        "_traceback": error_trace,
-                    }
-                )
-        return results
+        """恢复图片 URL 后使用基类的异常处理."""
+        restored_batch = [restore_original_images_in_place(item) for item in batch]
+        return self._default_sync_process(restored_batch)
     
     def process_item(self, item: dict) -> dict:
         """
         处理单个 item, 格式化为 SFT 训练数据.
         """
-        if (item.get("metadata") or {}).get("used_ground_truth") is False:
+        if should_skip_for_final_output(item):
             logger.info(f"[FormatterStage] Item {item.get('id', 'unknown')}: Already has valid output, skipping")
             item["metadata"]["skipped"] = True
             return item

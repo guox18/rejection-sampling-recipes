@@ -81,41 +81,6 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
-    parser.add_argument(
-        "--model",
-        type=str,
-        default=None,
-        help="采样模型名",
-    )
-    
-    parser.add_argument(
-        "--judge-model",
-        type=str,
-        default=None,
-        help="judge 模型名",
-    )
-    parser.add_argument(
-        "--base-url",
-        type=str,
-        default=None,
-        help="采样模型 API base URL",
-    )
-    parser.add_argument(
-        "--judge-base-url",
-        type=str,
-        default=None,
-        help="judge 模型 API base URL",
-    )
-
-    parser.add_argument(
-        "--semaphore-per-sampler",
-        type=int,
-        default=None,
-        help="SamplerStage 并发度",
-    )
-
-
-    
     # 数据路径
     parser.add_argument(
         "--input", "-i",
@@ -152,31 +117,6 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default=os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.yaml"),
         help="配置文件路径",
-    )
-    # Pipeline 配置(可覆盖配置文件中的默认值)
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=None,
-        help="每个 batch 的数据量(覆盖配置文件)",
-    )
-    parser.add_argument(
-        "--concurrency",
-        type=int,
-        default=None,
-        help="默认并发度, 仅对没有配置并发度的 Stages 起作用(Stage 的 actor 数量, 覆盖配置文件)",
-    )
-    parser.add_argument(
-        "--sampler-concurrency",
-        type=int,
-        default=None,
-        help="SamplerStage 并发度(覆盖配置文件)",
-    )
-    parser.add_argument(
-        "--verifier-concurrency",
-        type=int,
-        default=None,
-        help="VerifierStage 并发度(覆盖配置文件)",
     )
     
     # Ray 配置
@@ -436,13 +376,6 @@ def main():
     
     # 加载配置
     config = SFTConfig.from_yaml(args.config)
-    
-    # 命令行参数覆盖配置文件(自动检测所有匹配的参数)
-    for key in dir(config):
-        if not key.startswith('_') and hasattr(args, key):
-            arg_value = getattr(args, key, None)
-            if arg_value is not None:
-                setattr(config, key, arg_value)
     
     # 处理默认值：sampler/verifier_concurrency 默认使用 concurrency
     config.sampler_concurrency = config.sampler_concurrency or config.concurrency
