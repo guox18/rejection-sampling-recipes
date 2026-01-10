@@ -40,8 +40,8 @@ OUTPUT_DIR="${PROJECT_ROOT}/outputs/${TIMESTAMP}"
 
 LATEST=""                  # 设置为 "--latest" 从最新时间戳目录续传
 # 输出文件后缀
-OUTPUT_SUFFIX="_sft-30b"
-SFT_SUBDIR="sft-30b"              # SFT 输出子目录名称，默认为 "sft"
+OUTPUT_SUFFIX="_sft"
+SFT_SUBDIR="sft"              # SFT 输出子目录名称，默认为 "sft"
 
 # 其他选项（均为 run.py 原生参数，不修改 yaml 配置）
 NO_RESUME=""               # 设置为 "--no-resume" 禁用断点续传
@@ -59,7 +59,7 @@ export PYTHONPATH="/usr/local/lib/python3.12/dist-packages:$PYTHONPATH"
 
 # 禁用 Ray 的各种警告和日志
 export RAY_RUNTIME_ENV_HOOK_ENABLED=0
-export RAY_DEDUP_LOGS=0
+export RAY_DEDUP_LOGS=1
 export RAY_DISABLE_DOCKER_CPU_WARNING=1
 export RAY_DISABLE_MEMORY_MONITOR=1
 export RAY_LOG_TO_STDERR=0

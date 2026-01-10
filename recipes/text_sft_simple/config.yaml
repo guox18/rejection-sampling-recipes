@@ -1,0 +1,28 @@
+# Simple text-only recipe config
+
+# Sampling
+model: qwen25_32b_instruct
+base_url: http://10.102.249.62:21003/v1
+api_key: dummy
+n_samples: 2
+temperature: 0.7
+max_tokens: 8192
+max_retries: 2
+semaphore_per_sampler: 32
+
+# Judge (defaults to sampling model/base_url/api_key if not set)
+judge_model: qwen25_32b_instruct
+judge_base_url: http://10.102.249.62:21003/v1
+judge_api_key: dummy
+judge_temperature: 0.0
+judge_max_tokens: 10
+verifier_max_workers: 64
+
+# Formatting
+pass_threshold: 1.0
+
+# Pipeline
+batch_size: 128
+concurrency: 2
+# sampler_concurrency: 2
+# verifier_concurrency: 2

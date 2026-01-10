@@ -104,6 +104,10 @@ def setup_logging(
     root.addHandler(file_handler)
     root.addHandler(console_handler)
 
+    # # Suppress third-party loggers.
+    # logging.getLogger("httpx").setLevel(logging.WARNING)
+    # logging.getLogger("httpcore").setLevel(logging.WARNING)
+
     # Keep a reference for quick retrieval
     root._log_file_path = str(log_path)
     _LOGGING_CONFIGURED = True

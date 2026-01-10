@@ -1,33 +1,3 @@
-"""
-SFT Recipe: 采样 → 验证 → 格式化.
-
-Stage 支持两种内置执行模式:
-- 同步模式: 顺序执行 (默认)
-- 多线程模式: 线程池并发执行 (@Stage.threaded_mode)
-
-如需 asyncio 并发，请自行实现 `async def process()`。
-
-Stage 支持两种实现方式:
-- 只实现 process_item(): 框架自动批处理和异常处理 (推荐)
-- 覆盖 process(): 完全自定义批处理 (高级)
-
-本文件示例:
-- SamplerStage: 自定义 async process + AsyncOpenAIClient (API 调用)
-- VerifierStage: 多线程 + process_item + SyncOpenAIClient (LLM Judge)
-- FormatterStage: 同步 + process_item (数据格式化)
-
-框架内部字段: 
-- _resume_id: 用于断点续传的唯一标识符（基于内容哈希）
-- _failed: 标记处理失败的数据项
-- _error: 失败原因
-- _traceback: 失败时的堆栈跟踪
-
-注意：
-- 这些字段由 Pipeline 框架自动添加和保留
-- Stage 实现时无需手动处理这些字段
-- 即使 Stage 不返回这些字段，框架也会自动恢复它们
-"""
-
 import asyncio
 import base64
 from io import BytesIO
