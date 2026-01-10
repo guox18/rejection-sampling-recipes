@@ -45,40 +45,6 @@ pip install -r requirements.txt
 ## Recipes (Quick Start)
 
 All recipes read JSONL. Each item should have `messages` in OpenAI format.
-If you installed with uv, just prefix commands with `uv run`.
-
-### 1) `text_sft_simple` (text-only, simple)
-
-Input requirements (minimal):
-- `messages` with at least one user message
-- Gold answer is taken from the last assistant message if present, otherwise from
-  `metadata.short_answer` / `metadata.answer`
-
-```bash
-bash recipes/text_sft_simple/entrypoint/run.sh
-```
-
-### 2) `vl_cot_sft_plus_parse` (text + image + answer parsing)
-
-Input requirements (minimal):
-- `messages` can include `image_url` parts (relative path in `image_url.url`)
-- Provide an absolute image base path via `abs_path` (or run the preprocessor)
-- If `metadata.short_answer` is missing, the recipe parses `metadata.answer`
-  (extracted from the assistant message) to create it for judging
-
-For example:
-```bash
-# 1) Add absolute image paths (required if you have images)
-python scripts/preprocess_images.py \
-  --input tests/mock/text-pic.jsonl \
-  --image-base-path /abs/path/to/images \
-  --abs-image-path-field abs_path
-
-# 2) Run the recipe
-python recipes/vl_cot_sft_plus_parse/entrypoint/run.py \
-  --input tests/mock/text-pic.jsonl \
-  --config recipes/vl_cot_sft_plus_parse/config.yaml
-```
 
 ### Minimal JSONL examples
 
@@ -104,6 +70,31 @@ Multimodal (with images):
   "abs_path": "/abs/path/to/image/base"
 }
 ```
+
+### 1) `text_sft_simple` (text-only, simple)
+
+```bash
+bash recipes/text_sft_simple/entrypoint/run.sh
+```
+
+### 2) `vl_cot_sft_plus_parse` (text + image + answer parsing)
+
+
+For example:
+```bash
+# 1) Add absolute image paths ("abs_path")
+python scripts/preprocess_images.py \
+  --input tests/mock/text-pic.jsonl \
+  --image-base-path /abs/path/to/images \
+  --abs-image-path-field abs_path
+
+# 2) Run the recipe
+bash recipes/vl_cot_sft_plus_parse/entrypoint/run-30b/run-30b.sh
+```
+
+## Launch Serve
+
+See `scripts/launch_serve/README.md` for model service setup and launch steps.
 
 ## Logging
 - Default log files live in `logs/`: `pipeline.log` for the driver and
