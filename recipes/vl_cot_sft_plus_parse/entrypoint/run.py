@@ -2,6 +2,11 @@
 """
 SFT Recipe 执行入口.
 
+注意:
+    - 若包含图像, 需先用 scripts/preprocess_images.py 写入图片绝对路径字段
+      (默认使用 config.yaml 中的 abs_image_path_field)
+    - 若 metadata.short_answer 为空, 会从 assistant 的答案中解析并补齐
+
 Usage:
     # 处理单个文件（默认在输入文件的父目录下创建 sft/timestamp/ 子目录）
     python run.py --input data/train.jsonl

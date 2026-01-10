@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Simple text-only recipe entrypoint.
 
+Input JSONL (minimal):
+  - messages: OpenAI-style list
+  - gold answer: last assistant message OR metadata.short_answer/metadata.answer
+
 Usage:
     python -m recipes.text_sft_simple.entrypoint.run \
-        --input tests/mock/text-pic.jsonl
+        --input tests/mock/text.jsonl
 """
 
 import os
