@@ -7,7 +7,6 @@ set -e
 
 export RAY_DEFAULT_OBJECT_STORE_MEMORY_PROPORTION=0.75
 
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../" && pwd)"
 RECIPE_NAME="text_sft_simple"

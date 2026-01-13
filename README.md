@@ -16,9 +16,8 @@ Reproducible recipes for rejection sampling in LLM/VLM data synthesis.
 # Option A: uv (recommended; recipe example scripts use .venv by default)
 uv sync
 
-# Option B: conda + pip
-conda create -n rsr python=3.12
-conda activate rsr
+# Option B: pip
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 ## Core Concepts

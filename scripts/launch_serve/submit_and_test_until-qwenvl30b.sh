@@ -9,7 +9,7 @@ echo "=========================================="
 echo ""
 
 # ------------- Config -------------
-ROUTER_IP="10.102.249.62"
+ROUTER_IP="YOUR_ROUTER_IP"
 # ROUTER_PORT="21001"
 # MODEL_NAME="qwen3_vl_235b_a22b_thinking"
 

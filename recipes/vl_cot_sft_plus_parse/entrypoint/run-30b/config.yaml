@@ -1,6 +1,6 @@
 # LLM parser config
 parse_model: qwen25_32b_instruct
-parse_base_url: http://10.102.249.62:21003/v1
+parse_base_url: http://localhost:21003/v1
 parse_api_key: dummy
 parse_temperature: 0.0
 parse_max_tokens: 8096
@@ -8,7 +8,7 @@ parse_max_workers: 256
 
 # Sampling config
 model: qwen3_vl_30b_a3b_thinking
-base_url: http://10.102.249.62:21002/v1
+base_url: http://localhost:21002/v1
 api_key: dummy
 n_samples: 2
 temperature: 0.6
@@ -23,7 +23,7 @@ max_image_size_mb: 100.0
 
 # LLM judge config
 judge_model: qwen25_32b_instruct
-judge_base_url: http://10.102.249.62:21003/v1
+judge_base_url: http://localhost:21003/v1
 judge_api_key: dummy
 judge_temperature: 0.0
 judge_max_tokens: 10
