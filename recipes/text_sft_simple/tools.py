@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Optional
 
 import aiohttp
 
@@ -197,8 +196,8 @@ class SyncOpenAIClient:
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
     ) -> None:
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY") or "dummy"
         self.base_url = base_url
@@ -239,8 +238,8 @@ class AsyncOpenAIClient:
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
         max_retries: int = 3,
         semaphore_size: int = 10,
     ) -> None:

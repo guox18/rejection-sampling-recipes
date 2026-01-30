@@ -1,23 +1,23 @@
 import asyncio
 import base64
-from io import BytesIO
 import logging
 import os
+from io import BytesIO
 
 import aiohttp
 from PIL import Image
 
 from src.base import BaseRecipe, Stage
 from src.utils import get_nested_value
-from src.utils.qwen3_vl_util import smart_resize, SPATIAL_MERGE_SIZE, IMAGE_MAX_TOKEN_NUM
+from src.utils.qwen3_vl_util import IMAGE_MAX_TOKEN_NUM, SPATIAL_MERGE_SIZE, smart_resize
 
 from .config import SFTConfig
 from .tools import (
+    DEFAULT_JUDGE_TEMPLATE,
+    EXTRACT_ANSWER_TEMPLATE,
     AsyncOpenAIClient,
     SyncOpenAIClient,
-    DEFAULT_JUDGE_TEMPLATE,
     clip_thinking,
-    EXTRACT_ANSWER_TEMPLATE,
 )
 
 logger = logging.getLogger(__name__)
@@ -252,9 +252,7 @@ def extract_question_text(messages: list[dict]) -> str:
 
 
 class DataConverterStage(Stage):
-    """
-    """
-    Data conversion stage: convert raw data into SFT training format.
+    """Data conversion stage: convert raw data into SFT training format.
 
     Supported input formats:
     1. Multimodal data (with images)
@@ -1032,8 +1030,6 @@ class SFTRecipe(BaseRecipe):
 
 if __name__ == "__main__":
     config = SFTConfig()
-
-    import json
 
     data_converter = DataConverterStage(config)
 

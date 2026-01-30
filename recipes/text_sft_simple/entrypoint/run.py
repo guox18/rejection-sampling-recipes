@@ -43,9 +43,7 @@ def signal_handler(signum, frame):
         print("📄 Currently processing:")
         print(f"  Input:  {current_processing_file['input']}")
         print(f"  Output: {current_processing_file['output']}")
-        print(
-            f"  Progress: {current_processing_file['index']}/{current_processing_file['total']}"
-        )
+        print(f"  Progress: {current_processing_file['index']}/{current_processing_file['total']}")
     else:
         print("  No file is being processed")
     print("=" * 60)
@@ -267,7 +265,7 @@ def main() -> None:
     total_success = 0
     total_failed = 0
 
-    for i, (input_file, output_file) in enumerate(zip(input_files, output_files), 1):
+    for i, (input_file, output_file) in enumerate(zip(input_files, output_files, strict=True), 1):
         global current_processing_file
         current_processing_file = {
             "input": input_file,

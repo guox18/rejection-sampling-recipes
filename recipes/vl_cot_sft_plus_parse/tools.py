@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import os
-from typing import Optional
 
 import aiohttp
 
@@ -165,8 +164,8 @@ class AsyncOpenAIClient:
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
         max_retries: int = 3,
         semaphore_size: int = 10,
     ):
@@ -310,8 +309,8 @@ class SyncOpenAIClient:
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
     ):
         """
         Initialize sync client.
@@ -329,8 +328,8 @@ class SyncOpenAIClient:
         if self._client is None:
             try:
                 from openai import OpenAI
-            except ImportError:
-                raise ImportError("pip install openai")
+            except ImportError as err:
+                raise ImportError("pip install openai") from err
 
             self._client = OpenAI(base_url=self.base_url, api_key=self.api_key)
 

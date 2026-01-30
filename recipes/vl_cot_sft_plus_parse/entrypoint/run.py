@@ -51,14 +51,15 @@ import sys
 PROJECT_ROOT = os.getcwd()
 
 # Dynamically import the current recipe module (easy to copy directories).
-from importlib import import_module
+from importlib import import_module  # noqa: E402
 
 _recipe_name = os.path.basename(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SFTConfig = import_module(f"recipes.{_recipe_name}.config").SFTConfig
 SFTRecipe = import_module(f"recipes.{_recipe_name}.recipe").SFTRecipe
 
-import ray
-from src.pipeline import Pipeline
+import ray  # noqa: E402
+
+from src.pipeline import Pipeline  # noqa: E402
 
 # Global: track current file being processed.
 current_processing_file = None
@@ -123,8 +124,7 @@ def parse_args() -> argparse.Namespace:
         "--latest",
         action="store_true",
         help=(
-            "Resume from the latest timestamped output directory. "
-            "If none exists, create a new one."
+            "Resume from the latest timestamped output directory. If none exists, create a new one."
         ),
     )
     parser.add_argument(
@@ -141,8 +141,7 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default=None,
         help=(
-            "Ray cluster address. Empty starts local mode; 'auto' to detect; "
-            "or 'ray://IP:10001'."
+            "Ray cluster address. Empty starts local mode; 'auto' to detect; or 'ray://IP:10001'."
         ),
     )
     parser.add_argument(
@@ -296,7 +295,7 @@ def check_internal_server_errors(
     failed_items = 0
     internal_server_errors = 0
 
-    with open(output_file, "r") as f:
+    with open(output_file) as f:
         for line in f:
             if line.strip():
                 try:
@@ -460,7 +459,7 @@ def main():
     total_success = 0
     total_failed = 0
 
-    for i, (input_file, output_file) in enumerate(zip(input_files, output_files), 1):
+    for i, (input_file, output_file) in enumerate(zip(input_files, output_files, strict=True), 1):
         # Update global current file info.
         global current_processing_file
         current_processing_file = {
@@ -486,7 +485,7 @@ def main():
 
                 if non_skipped_item > 0:
                     error_rate = internal_errors / non_skipped_item
-                    print(f"\n🔍 Error Detection:")
+                    print("\n🔍 Error Detection:")
                     print(f"  Non_skipped_item items:           {non_skipped_item}")
                     print(f"  Failed items:          {failed}")
                     print(f"  InternalServerError:   {internal_errors}")
@@ -495,7 +494,9 @@ def main():
 
                     if should_stop:
                         print("\n⚠️  WARNING: InternalServerError rate too high!")
-                        print(f"  Rate {error_rate:.2%} exceeds threshold {args.error_threshold:.2%}")
+                        print(
+                            f"  Rate {error_rate:.2%} exceeds threshold {args.error_threshold:.2%}"
+                        )
                         print("  This may indicate the remote service is down or unstable.")
                         print("  Stopping to avoid producing large amounts of failed data.")
                         print(f"  Files processed: {i}/{len(input_files)}")

@@ -8,15 +8,15 @@ that are used by the pipeline system.
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, Set, Tuple
+from typing import Any
 
 # Framework internal fields (kept by the pipeline).
-FRAMEWORK_FIELDS: Set[str] = {"_resume_id", "_failed", "_error", "_traceback"}
+FRAMEWORK_FIELDS: set[str] = {"_resume_id", "_failed", "_error", "_traceback"}
 
 logger = logging.getLogger(__name__)
 
 
-def remove_framework_fields(item: Dict[str, Any], fields: Set[str] = None) -> Dict[str, Any]:
+def remove_framework_fields(item: dict[str, Any], fields: set[str] = None) -> dict[str, Any]:
     """
     Remove framework internal fields from a single item.
 
@@ -39,8 +39,8 @@ def remove_framework_fields(item: Dict[str, Any], fields: Set[str] = None) -> Di
 
 
 def clean_framework_fields_from_file(
-    input_path: str, output_path: str, fields: Set[str] = None, verbose: bool = True
-) -> Tuple[int, int, int]:
+    input_path: str, output_path: str, fields: set[str] = None, verbose: bool = True
+) -> tuple[int, int, int]:
     """
     Clean framework internal fields from a JSONL file.
 

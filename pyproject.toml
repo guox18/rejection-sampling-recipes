@@ -71,6 +71,7 @@ select = [
 ignore = [
     "E501",   # line too long (handled by formatter)
     "B008",   # do not perform function calls in argument defaults
+    "B024",   # abstract base class without abstract methods (Stage uses NotImplementedError pattern)
     "B027",   # empty method in abstract class (intentional for optional hooks)
 ]
 

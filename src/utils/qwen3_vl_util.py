@@ -3,23 +3,21 @@ import copy
 import logging
 import math
 import os
-import sys
 import time
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from io import BytesIO
-from typing import Optional, Union, Tuple, List, Any, Dict
-from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
+import numpy as np
 import requests
 import torch
 import torchvision
 from packaging import version
 from PIL import Image
-import numpy as np
 from torchvision import io, transforms
 from torchvision.transforms import InterpolationMode
-
 
 MAX_RATIO = 200
 SPATIAL_MERGE_SIZE = 2
@@ -57,9 +55,9 @@ def smart_resize(
     height: int,
     width: int,
     factor: int,
-    min_pixels: Optional[int] = None,
-    max_pixels: Optional[int] = None,
-) -> Tuple[int, int]:
+    min_pixels: int | None = None,
+    max_pixels: int | None = None,
+) -> tuple[int, int]:
     """
     Rescales the image so that the following conditions are met:
 
@@ -98,7 +96,7 @@ def to_rgb(pil_image: Image.Image) -> Image.Image:
         return pil_image.convert("RGB")
 
 
-def fetch_image(ele: Dict[str, Union[str, Image.Image]], image_patch_size: int = 14) -> Image.Image:
+def fetch_image(ele: dict[str, str | Image.Image], image_patch_size: int = 14) -> Image.Image:
     if "image" in ele:
         image = ele["image"]
     else:
@@ -152,9 +150,9 @@ def fetch_image(ele: Dict[str, Union[str, Image.Image]], image_patch_size: int =
 
 
 def smart_nframes(
-    ele: Dict[str, Any],
+    ele: dict[str, Any],
     total_frames: int,
-    video_fps: Union[int, float],
+    video_fps: int | float,
 ) -> int:
     """calculate the number of frames for video used for model inputs.
 
@@ -196,8 +194,8 @@ def smart_nframes(
 
 
 def _read_video_torchvision(
-    ele: Dict[str, Any],
-) -> Tuple[torch.Tensor, float]:
+    ele: dict[str, Any],
+) -> tuple[torch.Tensor, float]:
     """read video using torchvision.io.read_video
 
     Args:
@@ -213,7 +211,8 @@ def _read_video_torchvision(
     if version.parse(torchvision.__version__) < version.parse("0.19.0"):
         if "http://" in video_path or "https://" in video_path:
             warnings.warn(
-                "torchvision < 0.19.0 does not support http/https video path, please upgrade to 0.19.0."
+                "torchvision < 0.19.0 does not support http/https video path, please upgrade to 0.19.0.",
+                stacklevel=2,
             )
         if "file://" in video_path:
             video_path = video_path[7:]
@@ -234,12 +233,12 @@ def _read_video_torchvision(
     sample_fps = nframes / max(total_frames, 1e-6) * video_fps
     video = video[idx]
 
-    video_metadata = dict(
-        fps=video_fps,
-        frames_indices=idx,
-        total_num_frames=total_frames,
-        video_backend="torchvision",
-    )
+    video_metadata = {
+        "fps": video_fps,
+        "frames_indices": idx,
+        "total_num_frames": total_frames,
+        "video_backend": "torchvision",
+    }
     return video, video_metadata, sample_fps
 
 
@@ -250,10 +249,10 @@ def is_decord_available() -> bool:
 
 
 def calculate_video_frame_range(
-    ele: Dict[str, Any],
+    ele: dict[str, Any],
     total_frames: int,
     video_fps: float,
-) -> Tuple[int, int, int]:
+) -> tuple[int, int, int]:
     """
     Calculate the start and end frame indices based on the given time range.
 
@@ -310,8 +309,8 @@ def calculate_video_frame_range(
 
 
 def _read_video_decord(
-    ele: Dict[str, Any],
-) -> Tuple[torch.Tensor, float]:
+    ele: dict[str, Any],
+) -> tuple[torch.Tensor, float]:
     """read video using decord.VideoReader
 
     Args:
@@ -343,12 +342,12 @@ def _read_video_decord(
     )
     sample_fps = nframes / max(total_frames, 1e-6) * video_fps
 
-    video_metadata = dict(
-        fps=video_fps,
-        frames_indices=idx,
-        total_num_frames=total_frames,
-        video_backend="decord",
-    )
+    video_metadata = {
+        "fps": video_fps,
+        "frames_indices": idx,
+        "total_num_frames": total_frames,
+        "video_backend": "decord",
+    }
     return video, video_metadata, sample_fps
 
 
@@ -359,8 +358,8 @@ def is_torchcodec_available() -> bool:
 
 
 def _read_video_torchcodec(
-    ele: Dict[str, Any],
-) -> Tuple[torch.Tensor, float]:
+    ele: dict[str, Any],
+) -> tuple[torch.Tensor, float]:
     """read video using torchcodec.decoders.VideoDecoder
 
     Args:
@@ -394,12 +393,12 @@ def _read_video_torchcodec(
         f"torchcodec:  {video_path=}, {total_frames=}, {video_fps=}, time={time.time() - st:.3f}s"
     )
 
-    video_metadata = dict(
-        fps=video_fps,
-        frames_indices=idx,
-        total_num_frames=total_frames,
-        video_backend="torchcodec",
-    )
+    video_metadata = {
+        "fps": video_fps,
+        "frames_indices": idx,
+        "total_num_frames": total_frames,
+        "video_backend": "torchcodec",
+    }
     return video, video_metadata, sample_fps
 
 
@@ -427,11 +426,11 @@ def get_video_reader_backend() -> str:
 
 
 def fetch_video(
-    ele: Dict[str, Any],
+    ele: dict[str, Any],
     image_patch_size: int = 14,
     return_video_sample_fps: bool = False,
     return_video_metadata: bool = False,
-) -> Union[torch.Tensor, List[Image.Image]]:
+) -> torch.Tensor | list[Image.Image]:
     image_factor = image_patch_size * SPATIAL_MERGE_SIZE
     VIDEO_FRAME_MIN_PIXELS = VIDEO_MIN_TOKEN_NUM * image_factor * image_factor
     VIDEO_FRAME_MAX_PIXELS = VIDEO_MAX_TOKEN_NUM * image_factor * image_factor
@@ -470,11 +469,11 @@ def fetch_video(
 
         # fake video metadata
         raw_fps = process_info.pop("raw_fps", sample_fps)
-        video_metadata = dict(
-            fps=raw_fps,
-            frames_indices=[i for i in range(len(video))],
-            total_num_frames=(nframes / sample_fps) * raw_fps,
-        )
+        video_metadata = {
+            "fps": raw_fps,
+            "frames_indices": list(range(len(video))),
+            "total_num_frames": (nframes / sample_fps) * raw_fps,
+        }
 
     nframes, _, height, width = video.shape
     min_pixels = ele.get("min_pixels", VIDEO_FRAME_MIN_PIXELS)
@@ -514,8 +513,8 @@ def fetch_video(
 
 
 def extract_vision_info(
-    conversations: Union[List[Dict[str, Any]], List[List[Dict[str, Any]]]],
-) -> List[Dict[str, Any]]:
+    conversations: list[dict[str, Any]] | list[list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
     vision_infos = []
     if isinstance(conversations[0], dict):
         conversations = [conversations]
@@ -534,14 +533,14 @@ def extract_vision_info(
 
 
 def process_vision_info(
-    conversations: Union[List[Dict[str, Any]], List[List[Dict[str, Any]]]],
+    conversations: list[dict[str, Any]] | list[list[dict[str, Any]]],
     return_video_kwargs: bool = False,
     return_video_metadata: bool = False,
     image_patch_size: int = 14,
-) -> Tuple[
-    Optional[List[Image.Image]],
-    Optional[List[Union[torch.Tensor, List[Image.Image]]]],
-    Optional[Dict[str, Any]],
+) -> tuple[
+    list[Image.Image] | None,
+    list[torch.Tensor | list[Image.Image]] | None,
+    dict[str, Any] | None,
 ]:
     vision_infos = extract_vision_info(conversations)
     ## Read images or videos

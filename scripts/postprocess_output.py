@@ -13,19 +13,19 @@ import argparse
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, Set, Tuple
+from typing import Any
 
 # Framework internal fields (same as src/utils/framework.py)
-FRAMEWORK_FIELDS: Set[str] = {"_resume_id", "_failed", "_error", "_traceback"}
+FRAMEWORK_FIELDS: set[str] = {"_resume_id", "_failed", "_error", "_traceback"}
 
 # Additional fields to remove
-FIELDS_TO_REMOVE: Set[str] = FRAMEWORK_FIELDS | {"rollouts"}
+FIELDS_TO_REMOVE: set[str] = FRAMEWORK_FIELDS | {"rollouts"}
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
 
-def clean_item(item: Dict[str, Any]) -> Dict[str, Any]:
+def clean_item(item: dict[str, Any]) -> dict[str, Any]:
     """
     Remove framework fields and rollouts from a single item.
 
@@ -38,7 +38,7 @@ def clean_item(item: Dict[str, Any]) -> Dict[str, Any]:
     return {k: v for k, v in item.items() if k not in FIELDS_TO_REMOVE}
 
 
-def is_updated_content(item: Dict[str, Any]) -> bool:
+def is_updated_content(item: dict[str, Any]) -> bool:
     """
     Check if the item has successfully generated new assistant content.
 
@@ -58,7 +58,7 @@ def is_updated_content(item: Dict[str, Any]) -> bool:
 
 def process_file(
     input_path: str, output_dir: str = None, verbose: bool = True
-) -> Tuple[int, int, int]:
+) -> tuple[int, int, int]:
     """
     Process a JSONL file: clean fields and split based on used_ground_truth.
 
@@ -183,4 +183,3 @@ Operations performed:
 
 if __name__ == "__main__":
     main()
-

@@ -28,10 +28,9 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Optional
 
 
-def infer_image_base_path_from_doc_loc(doc_loc: str, image_base_dir: str) -> Optional[str]:
+def infer_image_base_path_from_doc_loc(doc_loc: str, image_base_dir: str) -> str | None:
     """
     Infer image base path from doc_loc.
 
@@ -182,7 +181,7 @@ def preprocess_file(
     }
 
     with (
-        open(input_path, "r", encoding="utf-8") as fin,
+        open(input_path, encoding="utf-8") as fin,
         open(output_path, "w", encoding="utf-8") as fout,
     ):
         for line_num, line in enumerate(fin, 1):
@@ -232,7 +231,6 @@ def preprocess_file(
                     continue
 
                 # Check whether image files exist.
-                all_images_exist = True
                 for relative_path in relative_paths:
                     full_path = os.path.join(item_image_base_path, relative_path)
                     stats["total_image_files"] += 1
@@ -249,7 +247,6 @@ def preprocess_file(
                                 "full_path": full_path,
                             }
                         )
-                        all_images_exist = False
                         print(f"❌ Line {line_num}: image file not found")
                         print(f"   ID: {item.get('id', 'unknown')}")
                         print(f"   Relative path: {relative_path}")
@@ -425,9 +422,7 @@ def main():
             print()
 
         if len(total_stats["missing_image_details"]) > 3:
-            print(
-                f"  ... and {len(total_stats['missing_image_details']) - 3} more missing records"
-            )
+            print(f"  ... and {len(total_stats['missing_image_details']) - 3} more missing records")
 
     print(f"\n{'=' * 80}")
     print("✅ Preprocessing complete")

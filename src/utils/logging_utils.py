@@ -4,7 +4,6 @@ import logging
 import os
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Optional, Tuple
 
 LOG_FORMAT = "%(asctime)s [%(levelname)s] %(processName)s/%(name)s: %(message)s"
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -12,7 +11,7 @@ DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 _LOGGING_CONFIGURED = False
 
 
-def _pick_log_dir(user_dir: Optional[str] = None) -> Path:
+def _pick_log_dir(user_dir: str | None = None) -> Path:
     """Pick a writable log directory with fallbacks.
 
     Priority:
@@ -44,12 +43,12 @@ def _pick_log_dir(user_dir: Optional[str] = None) -> Path:
 
 
 def setup_logging(
-    log_dir: Optional[str] = None,
-    log_filename: Optional[str] = "pipeline.log",
+    log_dir: str | None = None,
+    log_filename: str | None = "pipeline.log",
     console_level: str = "INFO",
     file_level: str = "DEBUG",
     role: str = "driver",
-) -> Tuple[logging.Logger, Path]:
+) -> tuple[logging.Logger, Path]:
     """
     Configure root logging with console + rotating file handlers.
 

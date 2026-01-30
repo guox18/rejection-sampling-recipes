@@ -2,11 +2,11 @@
 
 import asyncio
 import json
-import os
 import logging
+import os
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
 
 import pandas as pd
 import ray
@@ -14,7 +14,7 @@ import ray.data
 from ray.data import ActorPoolStrategy, TaskPoolStrategy
 
 from .base import BaseRecipe, Stage
-from .utils.data_io import convert_to_python_types, convert_scalar_to_python
+from .utils.data_io import convert_to_python_types
 from .utils.framework import FRAMEWORK_FIELDS
 from .utils.logging_utils import setup_logging
 
@@ -221,7 +221,7 @@ class Pipeline:
         """
         processed_ids = set()
         if os.path.exists(output_path):
-            with open(output_path, "r") as f:
+            with open(output_path) as f:
                 for line in f:
                     if line.strip():
                         try:
