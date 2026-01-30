@@ -1,58 +1,88 @@
 # Rejection Sampling Recipes
 
+[![Ruff](https://github.com/guox18/rejection-sampling-recipes/actions/workflows/ruff.yml/badge.svg)](https://github.com/guox18/rejection-sampling-recipes/actions/workflows/ruff.yml)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+
 Reproducible recipes for rejection sampling in LLM/VLM data synthesis.
 
-## Why this repo
+## Why This Repo
 
-- **Easy to run**: pick a recipe and run it; no extra scaffolding.
-- **Ready-to-use recipes**: text + multimodal flows with answer parsing, a solid judge
+- **Easy to run**: Pick a recipe and run it; no extra scaffolding.
+- **Ready-to-use recipes**: Text + multimodal flows with answer parsing, a solid judge
   prompt, and safe image-resize fallbacks.
 - **Scales when data grows**: Ray Data based pipeline, which gives streaming-style processing,
   batching, concurrency, and checkpoint/resume out of the box.
 
-## Install
-
-```bash
-# Option A: uv (recommended; recipe example scripts use .venv by default)
-uv sync
-
-# Option B: pip
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-```
 ## Core Concepts
 
-- **Stage**: A single processing step (e.g., sampling, verification, formatting).
-- **Recipe**: A sequence of stages that defines a complete data processing workflow.
-- **Pipeline**: The execution engine that runs recipes with batching, error handling,
-  and checkpoint/resume.
+| Concept | Description |
+|---------|-------------|
+| **Stage** | A single processing step (e.g., sampling, verification, formatting) |
+| **Recipe** | A sequence of stages that defines a complete data processing workflow |
+| **Pipeline** | The execution engine that runs recipes with batching, error handling, and checkpoint/resume |
 
 ## Project Structure
 
 ```
+rejection-sampling-recipes/
 ├── src/                          # Core framework
-│   ├── base.py                  # Stage and BaseRecipe base classes
-│   ├── pipeline.py              # Pipeline execution engine
-│   └── utils/                   # Data I/O utilities
-├── recipes/                     # Recipe implementations
-│   ├── text_sft_simple/         # Text-only recipe
-│   └── vl_cot_sft_plus_parse/   # Text + image recipe (with answer parsing)
-├── scripts/                     # Utility scripts
-└── tests/                       # Test files and mock data
+│   ├── base.py                   # Stage and BaseRecipe base classes
+│   ├── pipeline.py               # Pipeline execution engine
+│   └── utils/                    # Data I/O utilities
+├── recipes/                      # Recipe implementations
+│   ├── text_sft_simple/          # Text-only recipe
+│   └── vl_cot_sft_plus_parse/    # Text + image recipe (with answer parsing)
+├── scripts/                      # Utility scripts
+└── tests/                        # Test files and mock data
 ```
 
-## Recipes (Quick Start)
+## Installation
+
+### Prerequisites
+
+- Python 3.10 or higher
+- (Optional) [uv](https://github.com/astral-sh/uv) for faster dependency management
+
+### Option A: Using uv (Recommended)
+
+```bash
+uv sync
+```
+
+### Option B: Using pip
+
+```bash
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### Development Installation
+
+```bash
+# Install with development dependencies
+uv sync --extra dev
+
+# Or with pip
+pip install -e ".[dev]"
+```
+
+## Quick Start
 
 All recipes read JSONL. Each item should have `messages` in OpenAI format.
 
-### Minimal JSONL examples
+### Input Format Examples
 
-Text-only (You can put answer inside assistant response):
+**Text-only** (answer inside assistant response):
+
 ```json
 {"id": 1, "messages": [{"role": "user", "content": "Q?"}, {"role": "assistant", "content": "A"}]}
 ```
 
-Multimodal (with images):
+**Multimodal** (with images):
+
 ```json
 {
   "id": 1,
@@ -70,42 +100,85 @@ Multimodal (with images):
 }
 ```
 
-### 1) `text_sft_simple` (text-only, simple)
+### Available Recipes
+
+#### 1. `text_sft_simple` (Text-only)
+
+A simple text-only recipe for basic SFT data processing.
 
 ```bash
 bash recipes/text_sft_simple/entrypoint/run.sh
 ```
 
-### 2) `vl_cot_sft_plus_parse` (text + image + answer parsing)
+#### 2. `vl_cot_sft_plus_parse` (Text + Image + Answer Parsing)
+
+A multimodal recipe with Chain-of-Thought and answer parsing.
 
 ```bash
-# 1) Add absolute image paths ("abs_path")
+# Step 1: Add absolute image paths ("abs_path")
 python scripts/preprocess_images.py \
   --input tests/mock/text-pic.jsonl \
   --image-base-path /abs/path/to/images \
   --abs-image-path-field abs_path
 
-# 2) Run the recipe
+# Step 2: Run the recipe
 bash recipes/vl_cot_sft_plus_parse/entrypoint/run-30b/run-30b.sh
 ```
 
-## Launch Serve
+## Model Service Setup
 
-See `scripts/launch_serve/README.md` for model service setup and launch steps.
-Note: the default launch scripts include `ray stop`. If you need to run multiple
-scripts, use separate machines or remove `ray stop`.
+See [`scripts/launch_serve/README.md`](scripts/launch_serve/README.md) for model service setup and launch steps.
+
+> **Note**: The default launch scripts include `ray stop`. If you need to run multiple
+> scripts, use separate machines or remove `ray stop`.
 
 ## Logging
-- Default log files live in `logs/`: `pipeline.log` for the driver and
-  `pipeline_worker_<pid>.log` for Ray workers. If `logs/` is not writable, they
-  fall back to `/tmp/rejection-sampling-recipes-logs/`.
-- Environment overrides: `LOG_DIR` (log directory), `LOG_MAX_BYTES` (default 10MB),
-  `LOG_BACKUP_COUNT` (default 5), `LOG_FILE_LEVEL` (default DEBUG),
-  `LOG_CONSOLE_LEVEL` (default INFO).
-- The VL recipe reuses the global logging pipeline. Set `LOG_DIR` to group
-  driver/worker logs for this recipe under a specific directory (e.g.,
-  `/tmp/logs/vl_cot_sft_plus_parse`).
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `LOG_DIR` | `logs/` | Log directory (falls back to `/tmp/rejection-sampling-recipes-logs/`) |
+| `LOG_MAX_BYTES` | `10MB` | Maximum log file size |
+| `LOG_BACKUP_COUNT` | `5` | Number of backup log files |
+| `LOG_FILE_LEVEL` | `DEBUG` | File logging level |
+| `LOG_CONSOLE_LEVEL` | `INFO` | Console logging level |
+
+Log files:
+- `pipeline.log` - Driver logs
+- `pipeline_worker_<pid>.log` - Ray worker logs
+
+## Contributing
+
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+
+### Development Workflow
+
+```bash
+# Install dev dependencies
+uv sync --extra dev
+
+# Run linting
+uvx ruff check .
+
+# Run formatting
+uvx ruff format .
+
+# Run tests
+pytest
+```
 
 ## License
 
-MIT
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Citation
+
+If you use this project in your research, please consider citing:
+
+```bibtex
+@software{rejection_sampling_recipes,
+  title = {Rejection Sampling Recipes},
+  author = {guox18},
+  year = {2024},
+  url = {https://github.com/guox18/rejection-sampling-recipes}
+}
+```
