@@ -35,7 +35,8 @@ pip install -r requirements.txt
 │   └── utils/                   # 数据读写与工具
 ├── recipes/                     # Recipe 实现
 │   ├── text_sft_simple/         # 纯文本 recipe
-│   └── vl_cot_sft_plus_parse/   # 文本+图像 recipe（含答案解析）
+│   ├── vl_cot_sft_plus_parse/   # 文本+图像 recipe（含答案解析）
+│   └── cpu_task_demo/           # CPU 密集型 demo recipe
 ├── scripts/                     # 工具脚本
 └── tests/                       # 测试与 mock 数据
 ```
@@ -87,6 +88,24 @@ python scripts/preprocess_images.py \
 # 2) 运行 recipe
 bash recipes/vl_cot_sft_plus_parse/entrypoint/run-30b/run-30b.sh
 ```
+
+### 3) `cpu_task_demo`（CPU 密集型 Demo）
+
+用于验证 CPU 密集型任务在 Ray 集群中的分布式执行（示例为质数统计）。
+
+```bash
+bash recipes/cpu_task_demo/entrypoint/run.sh
+```
+
+如果你要做多节点 vs 单机的 CPU 扩展性对比，建议直接跑重负载 benchmark：
+
+```bash
+# 若不存在，会自动生成 tests/mock/cpu_task_heavy_3000.jsonl。
+# 脚本会自动识别集群 CPU，并将并发上限设为 80。
+bash recipes/cpu_task_demo/entrypoint/benchmark.sh
+```
+
+对比方式：先在“有额外 worker”状态跑一次，再停止 worker 后跑一次，比较 `Wall time (s)`。
 
 ## Launch Serve
 

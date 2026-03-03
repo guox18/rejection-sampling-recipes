@@ -1,0 +1,8 @@
+# CPU-heavy workload
+prime_limit: 60000
+rounds: 2
+
+# Pipeline
+batch_size: 8
+concurrency: 4
+cpu_stage_concurrency: 4

@@ -40,7 +40,7 @@ def process_file(
     kept = 0
     filtered_out = 0
 
-    with open(input_file, "r", encoding="utf-8") as fin:
+    with open(input_file, encoding="utf-8") as fin:
         with open(output_file, "w", encoding="utf-8") as fout:
             for line in fin:
                 total += 1
@@ -97,7 +97,7 @@ def main():
         args.max_tokens,
     )
 
-    print(f"\n=== Results ===")
+    print("\n=== Results ===")
     print(f"Total records: {stats['total']}")
     print(f"Kept (tokens <= {args.max_tokens}): {stats['kept']}")
     print(f"Filtered out (tokens > {args.max_tokens}): {stats['filtered_out']}")

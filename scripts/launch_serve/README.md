@@ -17,3 +17,21 @@ bash xxx.sh
 Notes:
 - `MODEL_NAME` must match the model name in the config file
 - `NUM_INSTANCES` depends on the model parallelism setup (see `scripts/launch_serve/AGENTS.md`)
+
+## Add CPU Workers to Existing Ray Cluster
+
+When you already have a Ray head node on the current machine, you can let newly created
+machines join it as CPU workers.
+
+1) On the Ray head machine, save head IP to shared storage:
+```bash
+hostname -i | awk '{print $1}' > scripts/launch_serve/.ray_head_ip
+```
+
+2) In your rjob task (running on the new machine), execute:
+```bash
+bash scripts/launch_serve/join_ray_cpu_worker.sh
+```
+
+The script auto-detects local CPU/memory and joins `<head-ip>:6379`. It keeps running to keep
+the worker alive.

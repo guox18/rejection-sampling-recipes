@@ -33,7 +33,8 @@ rejection-sampling-recipes/
 │   └── utils/                    # Data I/O utilities
 ├── recipes/                      # Recipe implementations
 │   ├── text_sft_simple/          # Text-only recipe
-│   └── vl_cot_sft_plus_parse/    # Text + image recipe (with answer parsing)
+│   ├── vl_cot_sft_plus_parse/    # Text + image recipe (with answer parsing)
+│   └── cpu_task_demo/            # CPU-intensive demo recipe
 ├── scripts/                      # Utility scripts
 └── tests/                        # Test files and mock data
 ```
@@ -124,6 +125,25 @@ python scripts/preprocess_images.py \
 # Step 2: Run the recipe
 bash recipes/vl_cot_sft_plus_parse/entrypoint/run-30b/run-30b.sh
 ```
+
+#### 3. `cpu_task_demo` (CPU-intensive Demo)
+
+A minimal recipe for CPU-heavy processing (prime counting) to verify distributed CPU execution.
+
+```bash
+bash recipes/cpu_task_demo/entrypoint/run.sh
+```
+
+For multi-node CPU scaling tests, use the heavy benchmark script:
+
+```bash
+# Auto-generates tests/mock/cpu_task_heavy_3000.jsonl when missing.
+# The script auto-detects cluster CPU and chooses concurrency up to 80.
+bash recipes/cpu_task_demo/entrypoint/benchmark.sh
+```
+
+To compare distributed vs single-node performance, run it once with extra Ray workers,
+then stop extra workers and run it again. Compare `Wall time (s)`.
 
 ## Model Service Setup
 

@@ -55,6 +55,7 @@ checkpoints/
 !tests/mock/text.jsonl
 !tests/mock/text-pic.jsonl
 !tests/mock/instruction_following.jsonl
+!tests/mock/cpu_task.jsonl
 
 # OS
 .DS_Store
@@ -63,6 +64,7 @@ Thumbs.db
 # Logs
 *.log
 logs/
+scripts/launch_serve/.ray_head_ip
 
 # 
 **/_*.py

@@ -405,6 +405,7 @@ class Pipeline:
         total_rows = 0
         success_rows = 0
         failed_rows = 0
+        item = {}
 
         with open(output_path, "a") as f:
             try:
@@ -447,11 +448,14 @@ class Pipeline:
                 import traceback
 
                 error_trace = traceback.format_exc()
+                item_repr = (
+                    safe_repr_item(item) if item else "<no item: failure occurred before first row>"
+                )
                 logger.error(
                     "[Pipeline] Error writing to output file: %s | Traceback: %s | Item: %s",
                     safe_str(e, max_length=200),
                     safe_str(error_trace, max_length=2000),
-                    safe_repr_item(item),
+                    item_repr,
                 )
             finally:
                 # Final flush to ensure all data is written.

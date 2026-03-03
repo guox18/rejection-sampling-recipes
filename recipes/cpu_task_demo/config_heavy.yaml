@@ -1,0 +1,9 @@
+# Heavier preset for distributed CPU benchmarking
+prime_limit: 180000
+rounds: 4
+
+# Pipeline
+batch_size: 1
+concurrency: 60
+cpu_stage_concurrency: 60
+flush_interval: 100
