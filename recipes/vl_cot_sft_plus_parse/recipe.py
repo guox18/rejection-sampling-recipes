@@ -252,7 +252,8 @@ def extract_question_text(messages: list[dict]) -> str:
 
 
 class DataConverterStage(Stage):
-    """Data conversion stage: convert raw data into SFT training format.
+    """
+    Data conversion stage: convert raw data into SFT training format.
 
     Supported input formats:
     1. Multimodal data (with images)

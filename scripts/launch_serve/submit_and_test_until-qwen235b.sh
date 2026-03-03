@@ -6,25 +6,23 @@ set -euo pipefail
 # ============================================================================
 
 echo "=========================================="
-echo "Full workflow example (rjob mode)"
-echo "=========================================="
 echo ""
 
 # ------------- Config -------------
-ROUTER_IP="YOUR_ROUTER_IP"
-# ROUTER_PORT="21001"
-# MODEL_NAME="qwen3_vl_235b_a22b_thinking"
+ROUTER_IP="10.102.249.62"
+ROUTER_PORT="21001"
+MODEL_NAME="qwen3_235b_a22b_thinking_2507"
 
 # ROUTER_PORT="21002"
 # MODEL_NAME="qwen3_vl_30b_a3b_thinking"
 
-ROUTER_PORT="21003"
-MODEL_NAME="qwen25_32b_instruct"
+# ROUTER_PORT="21003"
+# MODEL_NAME="qwen25_32b_instruct"
 
 # ⭐ Important: NUM_INSTANCES meaning has changed!
 # - For TP=8 large models (e.g., 235B): NUM_INSTANCES=8 (8 rjob tasks, 1 vLLM each)
 # - For TP=1 small models (e.g., 30B):  NUM_INSTANCES=1 (1 rjob task, auto starts 8 vLLM)
-NUM_INSTANCES=1
+NUM_INSTANCES=8
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -37,16 +35,17 @@ echo ""
 #   --config model_config_example.yaml \
 #   --model ${MODEL_NAME} \
 #   --router-ip ${ROUTER_IP} \
-#   --router-port ${ROUTER_PORT}
-
+#   --router-port ${ROUTER_PORT} \
+#   --namespace ailab-puyullmgpunew \
+#   --charged-group puyullmgpunew_gpu
+  
+# Submit rjob tasks (blocks until all services are ready)
 bash "${SCRIPT_DIR}/submit_rjob_instances.sh" \
   -n ${NUM_INSTANCES} \
   --config model_config_example.yaml \
   --model ${MODEL_NAME} \
   --router-ip ${ROUTER_IP} \
-  --router-port ${ROUTER_PORT} \
-  --namespace ailab-puyullmgpunew \
-  --charged-group puyullmgpunew_gpu
+  --router-port ${ROUTER_PORT}
 
 # If the command returned successfully, all services are started and registered.
 echo ""
@@ -83,3 +82,4 @@ echo ""
 echo "Note: clean up rjob tasks after completion"
 echo "  View tasks: cat /tmp/vllm_rjobs_${ROUTER_PORT}.txt"
 echo "  Stop tasks: use rjob stop <job-name> (see names in the file above)"
+

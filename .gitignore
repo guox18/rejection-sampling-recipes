@@ -54,6 +54,7 @@ checkpoints/
 *.jsonl
 !tests/mock/text.jsonl
 !tests/mock/text-pic.jsonl
+!tests/mock/instruction_following.jsonl
 
 # OS
 .DS_Store
@@ -68,5 +69,9 @@ logs/
 **/_*.jsonl
 
 # project-based
+data
 delivery
 outputs
+data/iftrain_sft
+recipes/ifbench
+.opencode

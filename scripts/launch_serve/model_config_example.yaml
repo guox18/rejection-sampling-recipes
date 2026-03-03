@@ -30,3 +30,9 @@ qwen25_32b_instruct:
   max_model_len: 16384     # Defaults to model default if not set (32768)
   model_path: "/mnt/shared-storage-user/large-model-center-share-weights/hf_hub/models--Qwen--Qwen2.5-32B-Instruct/snapshots/5ede1c97bbab6ce5cda5812749b4c0bdf79b18dd"
   # Extra vLLM args - common parameters only
+
+qwen3_235b_a22b_thinking_2507:
+  tp: 4                    # Tensor parallelism
+  dp: 2                    # Data parallelism
+  pp: 1                    # Pipeline parallelism
+  model_path: "/mnt/shared-storage-user/large-model-center-share-weights/hf_hub/models--Qwen--Qwen3-235B-A22B-Thinking-2507/snapshots/4cd68849b2a0fadb84866c703b133aa8c8636130"

@@ -1,0 +1,30 @@
+# IFBench recipe config
+
+# Sampling (核心生成任务, 使用大模型)
+model: qwen3_235b_a22b_thinking_2507
+base_url: http://10.102.249.62:21001/v1
+api_key: dummy
+n_samples: 2
+temperature: 0.3
+max_tokens: 10240
+max_retries: 2
+semaphore_per_sampler: 256
+
+# Feasibility (判断任务简单, 使用小模型加速)
+feasibility_model: qwen25_32b_instruct
+feasibility_base_url: http://10.102.249.62:21003/v1
+feasibility_api_key: dummy
+feasibility_temperature: 0.3
+feasibility_max_tokens: 4096
+feasibility_max_workers: 256
+
+# Verifier 纯规则, 其实不用多线程
+verifier_max_workers: 32
+
+# Formatting
+pass_threshold: 1.0
+
+# Pipeline
+batch_size: 2048
+concurrency: 1
+sampler_concurrency: 3
