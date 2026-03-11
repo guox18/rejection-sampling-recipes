@@ -34,6 +34,7 @@ rejection-sampling-recipes/
 ├── recipes/                      # Recipe implementations
 │   ├── text_sft_simple/          # Text-only recipe
 │   ├── vl_cot_sft_plus_parse/    # Text + image recipe (with answer parsing)
+│   ├── ifbench/                  # Instruction-following recipe
 │   └── cpu_task_demo/            # CPU-intensive demo recipe
 ├── scripts/                      # Utility scripts
 └── tests/                        # Test files and mock data
@@ -72,34 +73,8 @@ pip install -e ".[dev]"
 
 ## Quick Start
 
-All recipes read JSONL. Each item should have `messages` in OpenAI format.
-
-### Input Format Examples
-
-**Text-only** (answer inside assistant response):
-
-```json
-{"id": 1, "messages": [{"role": "user", "content": "Q?"}, {"role": "assistant", "content": "A"}]}
-```
-
-**Multimodal** (with images):
-
-```json
-{
-  "id": 1,
-  "messages": [
-    {
-      "role": "user",
-      "content": [
-        {"type": "image_url", "image_url": {"url": "images/foo.jpg", "image_wh": [640, 480]}},
-        {"type": "text", "text": "What is shown?"}
-      ]
-    },
-    {"role": "assistant", "content": "A short answer."}
-  ],
-  "abs_path": "/abs/path/to/image/base"
-}
-```
+All recipes read JSONL in OpenAI-style `messages` format.
+Use `tests/mock/*.jsonl` for concrete input examples.
 
 ### Available Recipes
 
@@ -126,7 +101,15 @@ python scripts/preprocess_images.py \
 bash recipes/vl_cot_sft_plus_parse/entrypoint/run-30b/run-30b.sh
 ```
 
-#### 3. `cpu_task_demo` (CPU-intensive Demo)
+#### 3. `ifbench` (Instruction Following)
+
+Instruction-following rolling pipeline with feasibility filtering and rule-based checks.
+
+```bash
+bash recipes/ifbench/entrypoint/run.sh
+```
+
+#### 4. `cpu_task_demo` (CPU-intensive Demo)
 
 A minimal recipe for CPU-heavy processing (prime counting) to verify distributed CPU execution.
 
@@ -134,16 +117,11 @@ A minimal recipe for CPU-heavy processing (prime counting) to verify distributed
 bash recipes/cpu_task_demo/entrypoint/run.sh
 ```
 
-For multi-node CPU scaling tests, use the heavy benchmark script:
+For multi-node scaling comparison (recommended):
 
 ```bash
-# Auto-generates tests/mock/cpu_task_heavy_3000.jsonl when missing.
-# The script auto-detects cluster CPU and chooses concurrency up to 80.
 bash recipes/cpu_task_demo/entrypoint/benchmark.sh
 ```
-
-To compare distributed vs single-node performance, run it once with extra Ray workers,
-then stop extra workers and run it again. Compare `Wall time (s)`.
 
 ## Model Service Setup
 

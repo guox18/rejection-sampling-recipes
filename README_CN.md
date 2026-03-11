@@ -36,6 +36,7 @@ pip install -r requirements.txt
 ├── recipes/                     # Recipe 实现
 │   ├── text_sft_simple/         # 纯文本 recipe
 │   ├── vl_cot_sft_plus_parse/   # 文本+图像 recipe（含答案解析）
+│   ├── ifbench/                 # 指令遵循 recipe
 │   └── cpu_task_demo/           # CPU 密集型 demo recipe
 ├── scripts/                     # 工具脚本
 └── tests/                       # 测试与 mock 数据
@@ -43,32 +44,8 @@ pip install -r requirements.txt
 
 ## Recipes（快速上手）
 
-所有 recipe 都读取 JSONL，每条数据需包含 OpenAI 格式的 `messages`。
-
-### 最小 JSONL 示例
-
-纯文本（答案可放在 assistant）：
-```json
-{"id": 1, "messages": [{"role": "user", "content": "Q?"}, {"role": "assistant", "content": "A"}]}
-```
-
-多模态（含图片）：
-```json
-{
-  "id": 1,
-  "messages": [
-    {
-      "role": "user",
-      "content": [
-        {"type": "image_url", "image_url": {"url": "images/foo.jpg", "image_wh": [640, 480]}},
-        {"type": "text", "text": "What is shown?"}
-      ]
-    },
-    {"role": "assistant", "content": "A short answer."}
-  ],
-  "abs_path": "/abs/path/to/image/base"
-}
-```
+所有 recipe 都读取 JSONL，采用 OpenAI 风格 `messages`。
+输入示例可直接参考 `tests/mock/*.jsonl`。
 
 ### 1) `text_sft_simple`（纯文本）
 
@@ -89,7 +66,15 @@ python scripts/preprocess_images.py \
 bash recipes/vl_cot_sft_plus_parse/entrypoint/run-30b/run-30b.sh
 ```
 
-### 3) `cpu_task_demo`（CPU 密集型 Demo）
+### 3) `ifbench`（指令遵循）
+
+用于指令遵循数据滚动，包含可行性过滤和规则校验。
+
+```bash
+bash recipes/ifbench/entrypoint/run.sh
+```
+
+### 4) `cpu_task_demo`（CPU 密集型 Demo）
 
 用于验证 CPU 密集型任务在 Ray 集群中的分布式执行（示例为质数统计）。
 
@@ -97,15 +82,11 @@ bash recipes/vl_cot_sft_plus_parse/entrypoint/run-30b/run-30b.sh
 bash recipes/cpu_task_demo/entrypoint/run.sh
 ```
 
-如果你要做多节点 vs 单机的 CPU 扩展性对比，建议直接跑重负载 benchmark：
+如果你要做多节点 vs 单机的 CPU 扩展性对比：
 
 ```bash
-# 若不存在，会自动生成 tests/mock/cpu_task_heavy_3000.jsonl。
-# 脚本会自动识别集群 CPU，并将并发上限设为 80。
 bash recipes/cpu_task_demo/entrypoint/benchmark.sh
 ```
-
-对比方式：先在“有额外 worker”状态跑一次，再停止 worker 后跑一次，比较 `Wall time (s)`。
 
 ## Launch Serve
 
