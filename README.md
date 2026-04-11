@@ -105,6 +105,8 @@ bash recipes/vl_cot_sft_plus_parse/entrypoint/run-30b/run-30b.sh
 
 Instruction-following rolling pipeline with feasibility filtering and rule-based checks.
 
+Run the one-time NLTK data setup first: [`recipes/ifbench/README.md`](recipes/ifbench/README.md).
+
 ```bash
 bash recipes/ifbench/entrypoint/run.sh
 ```

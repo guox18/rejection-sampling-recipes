@@ -69,11 +69,13 @@ scripts/launch_serve/.ray_head_ip
 # 
 **/_*.py
 **/_*.jsonl
+!recipes/ifbench/**
+recipes/ifbench/**/__pycache__/
 
 # project-based
 data
 delivery
 outputs
 data/iftrain_sft
-recipes/ifbench
+recipes/ifbench/_vendor/.nltk_data/
 .opencode
