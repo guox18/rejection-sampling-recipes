@@ -7,10 +7,9 @@ import logging
 
 import aiohttp
 
-from ._vendor import instructions_registry
-
 from src.base import BaseRecipe, Stage
 
+from ._vendor import instructions_registry
 from .config import TextSFTConfig
 from .tools import (
     FEASIBILITY_TEMPLATE,
@@ -32,7 +31,7 @@ def build_instruction_constraints(
 ) -> list[str]:
     """Build human-readable constraints from IFBench instruction definitions."""
     constraints: list[str] = []
-    for instruction_id, kwargs in zip(instruction_id_list, instruction_kwargs):
+    for instruction_id, kwargs in zip(instruction_id_list, instruction_kwargs, strict=True):
         instruction_cls = instructions_registry.INSTRUCTION_DICT.get(instruction_id)
         if instruction_cls is None:
             continue
@@ -59,9 +58,6 @@ def extract_finish_reason(response_entry: str | dict) -> str | None:
     if isinstance(response_entry, dict):
         return response_entry.get("finish_reason")
     return None
-
-
-
 
 
 class PrepareStage(Stage):
@@ -211,6 +207,7 @@ class FeasibilityStage(Stage):
                 "_error": f"FeasibilityStage: {exc}",
                 "_traceback": error_trace,
             }
+
 
 class SamplerStage(Stage):
     """Sample candidate answers for each item."""
@@ -385,7 +382,9 @@ class ScriptVerifierStage(Stage):
 
             if finish_reason != "stop":
                 all_pass = False
-                for instruction_id, kwargs in zip(instruction_id_list, instruction_kwargs):
+                for instruction_id, kwargs in zip(
+                    instruction_id_list, instruction_kwargs, strict=True
+                ):
                     constraint_results.append(
                         {
                             "instruction_id": instruction_id,
@@ -396,7 +395,9 @@ class ScriptVerifierStage(Stage):
                         }
                     )
             else:
-                for instruction_id, kwargs in zip(instruction_id_list, instruction_kwargs):
+                for instruction_id, kwargs in zip(
+                    instruction_id_list, instruction_kwargs, strict=True
+                ):
                     try:
                         result = self._check_instruction(
                             prompt, clipped_response, instruction_id, kwargs

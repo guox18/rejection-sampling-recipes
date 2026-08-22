@@ -24,7 +24,7 @@ from pathlib import Path
 def load_jsonl(filepath: str) -> list[dict]:
     """加载 JSONL 文件"""
     items = []
-    with open(filepath, "r", encoding="utf-8") as f:
+    with open(filepath, encoding="utf-8") as f:
         for line_num, line in enumerate(f, 1):
             line = line.strip()
             if not line:

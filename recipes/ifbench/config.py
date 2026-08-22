@@ -47,7 +47,7 @@ class TextSFTConfig:
     verifier_concurrency: int | None = None
 
     @classmethod
-    def from_yaml(cls, path: str) -> "TextSFTConfig":
+    def from_yaml(cls, path: str) -> TextSFTConfig:
         """Load config from a YAML file."""
         with open(path) as f:
             data = yaml.safe_load(f) or {}
